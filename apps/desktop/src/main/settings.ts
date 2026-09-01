@@ -1,4 +1,4 @@
-import { isValidServerHost } from "@passvault/core";
+import { isValidServerHost, normalizeServerHost } from "@passvault/core";
 import type { SqlDatabase } from "@passvault/storage-node";
 import type { ConnectionSettings, IceServer } from "../shared/api.js";
 
@@ -58,10 +58,12 @@ export class SettingsStore {
   }
 
   public save(next: ConnectionSettings): ConnectionSettings {
-    const host = next.serverHost.trim();
-    if (!isValidServerHost(host)) {
+    // Accepts a pasted URL, not just a bare host: somebody who just ran
+    // `curl https://sync.example.org/health` will paste exactly that.
+    const host = normalizeServerHost(next.serverHost);
+    if (host === undefined) {
       throw new Error(
-        `"${host}" is not a server address. Use something like sync.example.org or localhost:8787.`
+        `Could not read "${next.serverHost.trim()}" as a server address. It should look like sync.example.org.`
       );
     }
     // A relay URL must be a turn: or turns: one. Anything else silently fails

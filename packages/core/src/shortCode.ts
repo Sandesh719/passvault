@@ -108,6 +108,25 @@ export function isValidServerHost(host: string): boolean {
 }
 
 /**
+ * Turn whatever someone pasted into a bare host.
+ *
+ * People arrive here having just run `curl https://sync.example.org/health`, or
+ * having copied the address out of a browser. Refusing `https://sync.example.org`
+ * and telling them to "use something like sync.example.org" is a lecture about
+ * a difference the app is perfectly capable of resolving itself.
+ *
+ * Strips the scheme and any path — a deployment under a subpath is not
+ * something this supports in the first place, so keeping the path would only
+ * store an address that cannot work. Returns undefined if what is left is not
+ * a host.
+ */
+export function normalizeServerHost(raw: string): string | undefined {
+  const withoutScheme = raw.trim().replace(/^[a-z][a-z0-9+.-]*:\/\//iu, "");
+  const host = (withoutScheme.split(/[/?#]/u)[0] ?? "").toLowerCase();
+  return isValidServerHost(host) ? host : undefined;
+}
+
+/**
  * Whether a server is reached in the clear.
  *
  * Only the loopback address and `.local` names are, because those never leave

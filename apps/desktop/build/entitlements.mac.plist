@@ -13,5 +13,20 @@
     <true/>
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
     <true/>
+    <!--
+      Required while the build is signed ad-hoc rather than with a Developer ID.
+
+      Ad-hoc gives every binary its own identity with no team behind it, so
+      library validation refuses to let the app load its own Electron
+      framework: "mapping process and mapped file (non-platform) have different
+      Team IDs". The app then dies before it draws a window, and the message
+      appears only in a terminal — from Finder it just fails.
+
+      A Developer ID signature puts one team on every binary and makes this
+      unnecessary. Electron apps commonly ship with it regardless, because
+      helper binaries are signed separately.
+    -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
 </dict>
 </plist>

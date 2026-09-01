@@ -7,6 +7,7 @@ import {
   isLocalHost,
   isValidServerHost,
   looksLikeShortCode,
+  normalizeServerHost,
   normalizeShortCode,
   parseShortCode,
   signalUrlFor
@@ -125,5 +126,47 @@ describe("choosing a scheme for a server", () => {
     expect(isLocalHost("sync.example.org")).toBe(false);
     expect(httpUrlFor("sync.example.org")).toBe("https://sync.example.org");
     expect(signalUrlFor("sync.example.org")).toBe("wss://sync.example.org/signal");
+  });
+});
+
+/**
+ * Reading what people actually paste.
+ *
+ * Somebody setting this up has just run `curl https://sync.example.org/health`
+ * to check the server is alive. Pasting that address is the obvious next move,
+ * and rejecting it with "use something like sync.example.org" is a lecture
+ * about a difference the app can resolve by itself.
+ */
+describe("reading a pasted server address", () => {
+  it("accepts the address with its scheme", () => {
+    // The exact input that was refused in the field.
+    expect(normalizeServerHost("https://passvault-sandy.duckdns.org")).toBe(
+      "passvault-sandy.duckdns.org"
+    );
+    expect(normalizeServerHost("http://localhost:8787")).toBe("localhost:8787");
+    expect(normalizeServerHost("wss://sync.example.org")).toBe("sync.example.org");
+  });
+
+  it("accepts an address copied straight out of a browser or a curl", () => {
+    for (const pasted of [
+      "https://sync.example.org/",
+      "https://sync.example.org/health",
+      "  https://SYNC.example.org/health?x=1  ",
+      "sync.example.org"
+    ]) {
+      expect(normalizeServerHost(pasted)).toBe("sync.example.org");
+    }
+  });
+
+  it("still refuses what is genuinely not an address", () => {
+    for (const bad of ["", "   ", "not a host", "https://", "user:pass@host.org"]) {
+      expect(normalizeServerHost(bad)).toBeUndefined();
+    }
+  });
+
+  it("keeps the port, which is part of where the server is", () => {
+    expect(normalizeServerHost("https://sync.example.org:8443/health")).toBe(
+      "sync.example.org:8443"
+    );
   });
 });

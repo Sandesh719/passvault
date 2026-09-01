@@ -7,10 +7,22 @@ import type {
   PairedDeviceSummary,
   PairingCode,
   SyncOutcome,
-  VersionSummary
+  VersionSummary,
 } from "../shared/api.js";
+import { normalizeServerHost } from "@passvault/core";
 import { PeerBridge } from "./peerBridge.js";
-import { Body, Button, Card, Heading, HeroCard, Input, Row, Step, Sub, TextArea } from "./ui.js";
+import {
+  Body,
+  Button,
+  Card,
+  Heading,
+  HeroCard,
+  Input,
+  Row,
+  Step,
+  Sub,
+  TextArea,
+} from "./ui.js";
 import "./styles.css";
 
 declare global {
@@ -28,7 +40,10 @@ type Tab = "home" | "history" | "devices";
  * have. An ISO timestamp makes them do arithmetic.
  */
 function whenever(iso: string): string {
-  const seconds = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  const seconds = Math.max(
+    0,
+    Math.round((Date.now() - new Date(iso).getTime()) / 1000),
+  );
   if (seconds < 45) {
     return "just now";
   }
@@ -42,6 +57,28 @@ function whenever(iso: string): string {
   }
   const days = Math.round(hours / 24);
   return days === 1 ? "yesterday" : `${days} days ago`;
+}
+
+/**
+ * The message inside an IPC failure, without the plumbing around it.
+ *
+ * Electron wraps a main-process error as "Error invoking remote method
+ * 'settings:save': Error: ...". The useful sentence is at the end; the rest
+ * names an internal channel and helps nobody.
+ */
+function readableError(error: unknown, fallback: string): string {
+  if (!(error instanceof Error)) {
+    return fallback;
+  }
+  const tail = error.message.split("Error: ").pop()?.trim();
+  return tail === undefined || tail.length === 0 ? fallback : tail;
+}
+
+/** What the app will actually store, so the field cannot disagree with it. */
+function tidyHost(raw: string): string {
+  // Left alone when it cannot be read as a host, so the box keeps whatever was
+  // typed and the message can explain why rather than silently blanking it.
+  return normalizeServerHost(raw) ?? raw.trim();
 }
 
 function fileNameOf(path: string | undefined): string {
@@ -87,7 +124,7 @@ function App(): React.ReactElement {
       try {
         const outcome: SyncOutcome = await api.runSession({
           peerId,
-          pairingMode: pairingModeRef.current
+          pairingMode: pairingModeRef.current,
         });
         setConnection("Connected");
         if (outcome.kind === "failed") {
@@ -99,7 +136,7 @@ function App(): React.ReactElement {
         void refresh();
       }
     },
-    [refresh]
+    [refresh],
   );
 
   useEffect(() => {
@@ -112,7 +149,7 @@ function App(): React.ReactElement {
       onClosed: (peerId) => {
         readyPeers.current.delete(peerId);
         setConnection("Not connected");
-      }
+      },
     });
     bridgeRef.current = bridge;
     // A configured relay is what makes the connection work on networks where
@@ -130,12 +167,16 @@ function App(): React.ReactElement {
           void runSync(peerId);
         }
       }),
-    [runSync]
+    [runSync],
   );
 
   const rejoined = useRef(false);
   useEffect(() => {
-    if (rejoined.current || snapshot === undefined || snapshot.pairedDevices.length === 0) {
+    if (
+      rejoined.current ||
+      snapshot === undefined ||
+      snapshot.pairedDevices.length === 0
+    ) {
       return;
     }
     rejoined.current = true;
@@ -155,7 +196,9 @@ function App(): React.ReactElement {
       setPairingMode(true);
       bridgeRef.current?.connect(code);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Could not start pairing.");
+      setNotice(
+        error instanceof Error ? error.message : "Could not start pairing.",
+      );
     } finally {
       setBusy(false);
     }
@@ -188,7 +231,11 @@ function App(): React.ReactElement {
   }
 
   if (snapshot === undefined) {
-    return <div className="grid h-screen place-items-center text-muted">Starting…</div>;
+    return (
+      <div className="grid h-screen place-items-center text-muted">
+        Starting…
+      </div>
+    );
   }
 
   const conflict = snapshot.conflicts[0];
@@ -207,7 +254,7 @@ function App(): React.ReactElement {
             [
               ["home", "Home"],
               ["history", "History"],
-              ["devices", "Devices"]
+              ["devices", "Devices"],
             ] as const
           ).map(([id, label]) => (
             // Spelled out rather than a Button with overrides: stacking
@@ -234,7 +281,9 @@ function App(): React.ReactElement {
         <span
           title={connection}
           className={`max-w-80 overflow-hidden rounded-full border px-3 py-0.5 text-ellipsis whitespace-nowrap text-[13px] ${
-            connection === "Connected" ? "border-accent-line text-accent" : "border-rule text-muted"
+            connection === "Connected"
+              ? "border-accent-line text-accent"
+              : "border-rule text-muted"
           }`}
         >
           {connection}
@@ -258,7 +307,10 @@ function App(): React.ReactElement {
         {/* Above the tabs: the handshake is paused until this is answered, so
             it must not be something the user can navigate away from. */}
         {snapshot.verification !== undefined ? (
-          <VerifyCard peerName={snapshot.verification.peerName} code={snapshot.verification.code} />
+          <VerifyCard
+            peerName={snapshot.verification.peerName}
+            code={snapshot.verification.code}
+          />
         ) : null}
 
         {tab === "home" ? (
@@ -284,17 +336,27 @@ function App(): React.ReactElement {
             />
 
             {conflict !== undefined && other !== undefined ? (
-              <ConflictCard conflictId={conflict.id} otherVersion={other} onNotice={setNotice} />
+              <ConflictCard
+                conflictId={conflict.id}
+                otherVersion={other}
+                onNotice={setNotice}
+              />
             ) : null}
 
-            {snapshot.pairedDevices.length === 0 && snapshot.state.kind !== "needs-setup" ? (
+            {snapshot.pairedDevices.length === 0 &&
+            snapshot.state.kind !== "needs-setup" ? (
               <Card>
                 <Heading>Add your other device</Heading>
                 <Body>
-                  Nothing is being synced yet because this is the only device set up. Go to{" "}
-                  <strong className="text-ink">Devices</strong> to connect another one.
+                  Nothing is being synced yet because this is the only device
+                  set up. Go to <strong className="text-ink">Devices</strong> to
+                  connect another one.
                 </Body>
-                <Button tone="primary" className="justify-self-start" onClick={() => setTab("devices")}>
+                <Button
+                  tone="primary"
+                  className="justify-self-start"
+                  onClick={() => setTab("devices")}
+                >
                   Set up another device
                 </Button>
               </Card>
@@ -325,8 +387,9 @@ function App(): React.ReactElement {
             ) : (
               <>
                 <Body>
-                  Every save is kept. Restoring an older one is always safe — nothing is deleted, and
-                  you can come back to where you are now.
+                  Every save is kept. Restoring an older one is always safe —
+                  nothing is deleted, and you can come back to where you are
+                  now.
                 </Body>
                 <ul className="grid gap-2">
                   {snapshot.versions.map((version) => (
@@ -349,7 +412,9 @@ function App(): React.ReactElement {
                         }`}
                       />
                       <div className="grid min-w-0 flex-1 gap-0.5">
-                        <strong className="font-medium text-ink">{version.summary}</strong>
+                        <strong className="font-medium text-ink">
+                          {version.summary}
+                        </strong>
                         <span className="text-[13px] text-faint">
                           {whenever(version.savedAt)}
                           {version.isCurrent ? " · in use now" : ""}
@@ -360,7 +425,11 @@ function App(): React.ReactElement {
                           In use
                         </span>
                       ) : (
-                        <Button onClick={() => void api.restoreVersion(version.id)}>Restore</Button>
+                        <Button
+                          onClick={() => void api.restoreVersion(version.id)}
+                        >
+                          Restore
+                        </Button>
                       )}
                     </li>
                   ))}
@@ -391,26 +460,41 @@ function App(): React.ReactElement {
 
             <Card>
               <Heading>Connect another device</Heading>
-              <Body>Do this once per device. Start on one device, then type the code on the other.</Body>
+              <Body>
+                Do this once per device. Start on one device, then type the code
+                on the other.
+              </Body>
 
               <ol className="grid gap-4">
                 <Step number={1} title="On this device">
-                  <p className="m-0 text-sm text-muted">Get a code to type on the other one.</p>
-                  <Button tone="primary" disabled={busy} onClick={() => void startPairing()}>
+                  <p className="m-0 text-sm text-muted">
+                    Get a code to type on the other one.
+                  </p>
+                  <Button
+                    tone="primary"
+                    disabled={busy}
+                    onClick={() => void startPairing()}
+                  >
                     {pairing === undefined ? "Get a code" : "Get a new code"}
                   </Button>
-                  {pairing !== undefined ? <PairingCodePanel pairing={pairing} /> : null}
+                  {pairing !== undefined ? (
+                    <PairingCodePanel pairing={pairing} />
+                  ) : null}
                 </Step>
 
                 <Step number={2} title="On the other device">
-                  <p className="m-0 text-sm text-muted">Type the code there and connect.</p>
+                  <p className="m-0 text-sm text-muted">
+                    Type the code there and connect.
+                  </p>
                   <Input
                     className="max-w-56 font-mono text-lg tracking-widest uppercase placeholder:normal-case"
                     placeholder="XXXX-XXXX"
                     autoCapitalize="characters"
                     spellCheck={false}
                     value={enteredCode}
-                    onChange={(event) => setEnteredCode(event.currentTarget.value)}
+                    onChange={(event) =>
+                      setEnteredCode(event.currentTarget.value)
+                    }
                     onKeyDown={(event) => {
                       if (event.key === "Enter" && enteredCode.length > 0) {
                         void acceptPairing();
@@ -423,13 +507,16 @@ function App(): React.ReactElement {
                   >
                     Connect
                   </Button>
-                  <Sub>A full link pasted from the other device works here too.</Sub>
+                  <Sub>
+                    A full link pasted from the other device works here too.
+                  </Sub>
                 </Step>
 
                 <Step number={3} title="Check the number">
                   <p className="m-0 text-sm text-muted">
-                    Both devices then show the same six digits. Confirming they match is what proves
-                    you connected to your own device and not to someone in between.
+                    Both devices then show the same six digits. Confirming they
+                    match is what proves you connected to your own device and
+                    not to someone in between.
                   </p>
                 </Step>
               </ol>
@@ -450,13 +537,16 @@ function App(): React.ReactElement {
  * of the other device behind — which is why the question is worth asking and
  * why it has to wait for a person rather than flash past them.
  */
-function VerifyCard(props: { readonly peerName: string; readonly code: string }): React.ReactElement {
+function VerifyCard(props: {
+  readonly peerName: string;
+  readonly code: string;
+}): React.ReactElement {
   return (
     <Card className="border-warn ring-1 ring-warn/25">
       <Heading>Do these numbers match?</Heading>
       <Body>
-        <strong className="text-ink">{props.peerName}</strong> is trying to connect. It should be
-        showing exactly this number right now.
+        <strong className="text-ink">{props.peerName}</strong> is trying to
+        connect. It should be showing exactly this number right now.
       </Body>
       <div className="grid justify-items-center rounded-lg border border-accent-line bg-accent-sunk px-4 py-4">
         <div className="pl-[0.24em] font-mono text-4xl tracking-[0.24em] text-accent">
@@ -467,11 +557,13 @@ function VerifyCard(props: { readonly peerName: string; readonly code: string })
         <Button tone="primary" onClick={() => api.answerVerification(true)}>
           Yes, they match
         </Button>
-        <Button onClick={() => api.answerVerification(false)}>No — do not connect</Button>
+        <Button onClick={() => api.answerVerification(false)}>
+          No — do not connect
+        </Button>
       </Row>
       <Sub>
-        Nothing is shared until you answer. If the numbers differ, say no: it means something is
-        sitting between the two devices.
+        Nothing is shared until you answer. If the numbers differ, say no: it
+        means something is sitting between the two devices.
       </Sub>
     </Card>
   );
@@ -481,8 +573,12 @@ function VerifyCard(props: { readonly peerName: string; readonly code: string })
  * A code short enough to read aloud, with the link kept for the case where the
  * two devices do share a clipboard.
  */
-function PairingCodePanel(props: { readonly pairing: PairingCode }): React.ReactElement {
-  const [copied, setCopied] = useState<"code" | "qualified" | "link" | undefined>(undefined);
+function PairingCodePanel(props: {
+  readonly pairing: PairingCode;
+}): React.ReactElement {
+  const [copied, setCopied] = useState<
+    "code" | "qualified" | "link" | undefined
+  >(undefined);
   const [showLink, setShowLink] = useState(false);
 
   function copy(what: "code" | "qualified" | "link", value: string): void {
@@ -497,7 +593,10 @@ function PairingCodePanel(props: { readonly pairing: PairingCode }): React.React
   return (
     <div className="grid w-full justify-items-start gap-2.5">
       {shortCode === undefined ? (
-        <Sub>This connection server does not hand out short codes, so use the link below.</Sub>
+        <Sub>
+          This connection server does not hand out short codes, so use the link
+          below.
+        </Sub>
       ) : (
         <>
           {/* Read off one screen and typed into another, so a stray double-click
@@ -517,15 +616,19 @@ function PairingCodePanel(props: { readonly pairing: PairingCode }): React.React
               which one that is, so a device set to a different server has
               something it can actually use. */}
           <Sub>
-            Held on <strong className="text-muted">{serverHost}</strong>. If your other device uses a
-            different connection server, type the longer form there instead:
+            Held on <strong className="text-muted">{serverHost}</strong>. If
+            your other device uses a different connection server, type the
+            longer form there instead:
           </Sub>
           {shortCodeQualified === undefined ? null : (
             <Row>
               <code className="rounded-md border border-rule bg-sunk px-2.5 py-1.5 font-mono text-[13px] break-all text-ink select-all">
                 {shortCodeQualified}
               </code>
-              <Button small onClick={() => copy("qualified", shortCodeQualified)}>
+              <Button
+                small
+                onClick={() => copy("qualified", shortCodeQualified)}
+              >
                 {copied === "qualified" ? "Copied" : "Copy"}
               </Button>
             </Row>
@@ -563,10 +666,14 @@ function PairingCodePanel(props: { readonly pairing: PairingCode }): React.React
 function ConnectionCard(props: {
   readonly onNotice: (message: string) => void;
 }): React.ReactElement {
-  const [settings, setSettings] = useState<ConnectionSettings | undefined>(undefined);
+  const [settings, setSettings] = useState<ConnectionSettings | undefined>(
+    undefined,
+  );
   const [host, setHost] = useState("");
   const [testing, setTesting] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; detail: string } | undefined>(undefined);
+  const [result, setResult] = useState<
+    { ok: boolean; detail: string } | undefined
+  >(undefined);
   const [showRelay, setShowRelay] = useState(false);
   const [relay, setRelay] = useState({ url: "", username: "", credential: "" });
 
@@ -577,7 +684,7 @@ function ConnectionCard(props: {
       setRelay({
         url: loaded.turnUrl ?? "",
         username: loaded.turnUsername ?? "",
-        credential: loaded.turnCredential ?? ""
+        credential: loaded.turnCredential ?? "",
       });
     });
   }, []);
@@ -605,15 +712,18 @@ function ConnectionCard(props: {
           : {
               turnUrl: relay.url.trim(),
               turnUsername: relay.username.trim(),
-              turnCredential: relay.credential
-            })
+              turnCredential: relay.credential,
+            }),
       })
       .then((saved) => {
         setSettings(saved);
-        setResult({ ok: true, detail: `Saved. This device now meets others at ${saved.serverHost}.` });
+        setResult({
+          ok: true,
+          detail: `Saved. This device now meets others at ${saved.serverHost}.`,
+        });
       })
       .catch((error: unknown) =>
-        props.onNotice(error instanceof Error ? error.message : "Could not save that.")
+        props.onNotice(readableError(error, "Could not save that.")),
       );
   }
 
@@ -621,12 +731,15 @@ function ConnectionCard(props: {
     <Card>
       <Heading>Connection server</Heading>
       <Body>
-        Two devices find each other through a server they both reach. It only introduces them — your
-        passwords never pass through it, and it cannot read them.
+        Two devices find each other through a server they both reach. It only
+        introduces them — your passwords never pass through it, and it cannot
+        read them.
       </Body>
       <Sub>
-        For devices in different places, set <strong className="text-muted">both</strong> to the same
-        address. Leave it as it is if they are on the same network.
+        For devices in different places, set{" "}
+        <strong className="text-muted">both</strong> to the same address. Leave
+        it as it is if they are on the same network. Pasting the full{" "}
+        <code className="text-muted">https://…</code> address works too.
       </Sub>
 
       <Row>
@@ -636,6 +749,10 @@ function ConnectionCard(props: {
           spellCheck={false}
           placeholder="sync.example.org"
           onChange={(event) => setHost(event.currentTarget.value)}
+          // Pasting a whole URL is the normal thing to do; show the bare host
+          // that will actually be stored rather than saving something that
+          // does not match what is on screen.
+          onBlur={(event) => setHost(tidyHost(event.currentTarget.value))}
         />
         <Button
           disabled={testing || host.trim().length === 0}
@@ -653,27 +770,39 @@ function ConnectionCard(props: {
       </Row>
 
       {result === undefined ? null : (
-        <p className={`m-0 text-[13.5px] ${result.ok ? "text-accent" : "text-warn"}`}>
+        <p
+          className={`m-0 text-[13.5px] ${result.ok ? "text-accent" : "text-warn"}`}
+        >
           {result.detail}
         </p>
       )}
 
-      <Button tone="ghost" small className="justify-self-start" onClick={() => setShowRelay(!showRelay)}>
-        {showRelay ? "Hide relay settings" : "Add a relay (for restrictive networks)"}
+      <Button
+        tone="ghost"
+        small
+        className="justify-self-start"
+        onClick={() => setShowRelay(!showRelay)}
+      >
+        {showRelay
+          ? "Hide relay settings"
+          : "Add a relay (for restrictive networks)"}
       </Button>
 
       {showRelay ? (
         <div className="grid gap-2.5 border-t border-rule pt-3">
           <Sub>
-            Most connections go straight between the two devices. A few networks — some office and
-            mobile ones — block that. A relay forwards the encrypted traffic for those, without being
-            able to read it or keeping a copy.
+            Most connections go straight between the two devices. A few networks
+            — some office and mobile ones — block that. A relay forwards the
+            encrypted traffic for those, without being able to read it or
+            keeping a copy.
           </Sub>
           <Input
             value={relay.url}
             spellCheck={false}
             placeholder="turn:relay.example.org:3478"
-            onChange={(event) => setRelay({ ...relay, url: event.currentTarget.value })}
+            onChange={(event) =>
+              setRelay({ ...relay, url: event.currentTarget.value })
+            }
           />
           <Row>
             <Input
@@ -681,20 +810,29 @@ function ConnectionCard(props: {
               value={relay.username}
               spellCheck={false}
               placeholder="Relay username"
-              onChange={(event) => setRelay({ ...relay, username: event.currentTarget.value })}
+              onChange={(event) =>
+                setRelay({ ...relay, username: event.currentTarget.value })
+              }
             />
             <Input
               className="min-w-40 flex-1"
               type="password"
               value={relay.credential}
               placeholder="Relay password"
-              onChange={(event) => setRelay({ ...relay, credential: event.currentTarget.value })}
+              onChange={(event) =>
+                setRelay({ ...relay, credential: event.currentTarget.value })
+              }
             />
           </Row>
         </div>
       ) : null}
 
-      <Button tone="primary" className="justify-self-start" disabled={!changed} onClick={save}>
+      <Button
+        tone="primary"
+        className="justify-self-start"
+        disabled={!changed}
+        onClick={save}
+      >
         Save
       </Button>
     </Card>
@@ -733,14 +871,18 @@ function DeviceRow(props: {
       {confirming ? (
         <Row>
           <span className="text-[13px] text-faint">Forget it completely?</span>
-          <Button onClick={() => void api.forgetDevice(device.deviceId)}>Yes, forget it</Button>
+          <Button onClick={() => void api.forgetDevice(device.deviceId)}>
+            Yes, forget it
+          </Button>
           <Button tone="ghost" onClick={() => setConfirming(false)}>
             Cancel
           </Button>
         </Row>
       ) : paused ? (
         <Row>
-          <Button onClick={() => void api.reconnectDevice(device.deviceId)}>Reconnect</Button>
+          <Button onClick={() => void api.reconnectDevice(device.deviceId)}>
+            Reconnect
+          </Button>
           <Button
             tone="ghost"
             title="Erase this device. Connecting it again means comparing numbers from scratch."
@@ -789,16 +931,19 @@ function StatusCard(props: {
       <HeroCard tone="neutral">
         <Heading>Set up syncing</Heading>
         <Body>
-          Keep one password file in step across your devices. KeePassXC still manages your passwords
-          — this only moves the file between machines, and it stays encrypted the whole way.
+          Keep one password file in step across your devices. KeePassXC still
+          manages your passwords — this only moves the file between machines,
+          and it stays encrypted the whole way.
         </Body>
         <div className="grid justify-items-start gap-2.5">
           <Button tone="primary" onClick={props.onChooseVault}>
             My password file is on this device
           </Button>
           <Sub>
-            If it is on another device instead, set that one up first, then connect this one from the{" "}
-            <strong className="text-muted">Devices</strong> tab — the file will arrive by itself.
+            If it is on another device instead, set that one up first, then
+            connect this one from the{" "}
+            <strong className="text-muted">Devices</strong> tab — the file will
+            arrive by itself.
           </Sub>
         </div>
       </HeroCard>
@@ -810,10 +955,15 @@ function StatusCard(props: {
       <HeroCard tone="attention">
         <Heading>Almost there</Heading>
         <Body>
-          <strong className="text-ink">{state.vaultName}</strong> arrived from your other device.
-          Choose where to keep it on this machine, then open that file in KeePassXC.
+          <strong className="text-ink">{state.vaultName}</strong> arrived from
+          your other device. Choose where to keep it on this machine, then open
+          that file in KeePassXC.
         </Body>
-        <Button tone="primary" className="justify-self-start" onClick={props.onSaveHere}>
+        <Button
+          tone="primary"
+          className="justify-self-start"
+          onClick={props.onSaveHere}
+        >
           Save it on this device
         </Button>
       </HeroCard>
@@ -826,8 +976,8 @@ function StatusCard(props: {
         <Heading>Waiting for KeePassXC</Heading>
         <Body>
           There is a newer version ready, but KeePassXC currently has{" "}
-          <strong className="text-ink">{fileNameOf(vault?.kdbxPath)}</strong> open. Close it and the
-          file will update.
+          <strong className="text-ink">{fileNameOf(vault?.kdbxPath)}</strong>{" "}
+          open. Close it and the file will update.
         </Body>
         <Button className="justify-self-start" onClick={props.onApplyPending}>
           I closed it — update now
@@ -840,7 +990,10 @@ function StatusCard(props: {
     return (
       <HeroCard tone="attention">
         <Heading>Both devices changed things</Heading>
-        <Body>Nothing has been lost. Combine them below to keep every change from both devices.</Body>
+        <Body>
+          Nothing has been lost. Combine them below to keep every change from
+          both devices.
+        </Body>
       </HeroCard>
     );
   }
@@ -849,10 +1002,17 @@ function StatusCard(props: {
     <HeroCard tone="good">
       <Heading>Everything is in sync</Heading>
       <Body>
-        <strong className="text-ink">{fileNameOf(vault?.kdbxPath)}</strong> is up to date
-        {props.currentSavedAt === undefined ? "" : ` · last change ${whenever(props.currentSavedAt)}`}.
+        <strong className="text-ink">{fileNameOf(vault?.kdbxPath)}</strong> is
+        up to date
+        {props.currentSavedAt === undefined
+          ? ""
+          : ` · last change ${whenever(props.currentSavedAt)}`}
+        .
       </Body>
-      <Sub>Saves in KeePassXC are picked up automatically and sent to your other devices.</Sub>
+      <Sub>
+        Saves in KeePassXC are picked up automatically and sent to your other
+        devices.
+      </Sub>
     </HeroCard>
   );
 }
@@ -874,12 +1034,13 @@ function ConflictCard(props: {
     <Card>
       <Heading>Combine the changes</Heading>
       <Body>
-        Your other device saved changes too ({whenever(props.otherVersion.savedAt)}). Combining keeps
-        both — entries added on either device all end up in one file.
+        Your other device saved changes too (
+        {whenever(props.otherVersion.savedAt)}). Combining keeps both — entries
+        added on either device all end up in one file.
       </Body>
       <Sub>
-        This needs your master password once, only to open the two files and write the combined one.
-        It is not stored.
+        This needs your master password once, only to open the two files and
+        write the combined one. It is not stored.
       </Sub>
 
       <Row>
@@ -901,7 +1062,10 @@ function ConflictCard(props: {
           onClick={() => {
             setWorking(true);
             void api
-              .combineAndUse({ otherVersionId: props.otherVersion.id, password })
+              .combineAndUse({
+                otherVersionId: props.otherVersion.id,
+                password,
+              })
               .then((result) => {
                 setPassword("");
                 if (result.kind !== "merged") {
@@ -915,21 +1079,30 @@ function ConflictCard(props: {
         </Button>
       </Row>
 
-      <Button tone="ghost" small className="justify-self-start" onClick={() => setShowOneSided(!showOneSided)}>
+      <Button
+        tone="ghost"
+        small
+        className="justify-self-start"
+        onClick={() => setShowOneSided(!showOneSided)}
+      >
         {showOneSided ? "Hide other options" : "Other options"}
       </Button>
 
       {showOneSided ? (
         <div className="grid gap-2.5 border-t border-rule pt-3">
           <Sub>
-            These pick a winner instead of combining, and they only change <em>this</em> device. If
-            both devices pick opposite sides you will simply swap and still be out of step — which is
-            why combining is the recommended path.
+            These pick a winner instead of combining, and they only change{" "}
+            <em>this</em> device. If both devices pick opposite sides you will
+            simply swap and still be out of step — which is why combining is the
+            recommended path.
           </Sub>
           <Row>
             <Button
               onClick={() =>
-                void api.resolveConflict({ conflictId: props.conflictId, decision: "keep-current" })
+                void api.resolveConflict({
+                  conflictId: props.conflictId,
+                  decision: "keep-current",
+                })
               }
             >
               Keep only this device&rsquo;s version
@@ -938,7 +1111,7 @@ function ConflictCard(props: {
               onClick={() =>
                 void api.resolveConflict({
                   conflictId: props.conflictId,
-                  decision: "switch-incoming"
+                  decision: "switch-incoming",
                 })
               }
             >

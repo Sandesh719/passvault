@@ -4,7 +4,7 @@ import {
   cryptoIdGenerator,
   formatQualifiedShortCode,
   httpUrlFor,
-  isValidServerHost,
+  normalizeServerHost,
   openConflict,
   parseShortCode,
   recordConflictDecision,
@@ -364,9 +364,13 @@ export class DesktopServices {
    * be right, and a wrong address otherwise shows up much later as a code that
    * "is not valid" — which reads like a typo in the code, not in the server.
    */
-  public async testConnectionServer(host: string): Promise<{ ok: boolean; detail: string }> {
-    if (!isValidServerHost(host)) {
-      return { ok: false, detail: "That is not a server address. Try sync.example.org." };
+  public async testConnectionServer(raw: string): Promise<{ ok: boolean; detail: string }> {
+    const host = normalizeServerHost(raw);
+    if (host === undefined) {
+      return {
+        ok: false,
+        detail: `Could not read "${raw.trim()}" as a server address. It should look like sync.example.org.`
+      };
     }
     try {
       const response = await fetch(`${httpUrlFor(host)}/health`, {

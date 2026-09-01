@@ -32,10 +32,20 @@ mac:
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
-  # Unsigned until there is a Developer ID certificate to sign with. See
-  # DEPLOY.md — an unsigned build is fine to run yourself and cannot be
-  # distributed without the recipient clearing Gatekeeper by hand.
-  identity: null
+  # Ad-hoc, not unsigned.
+  #
+  # `identity: null` skipped signing altogether, which left Electron's own
+  # linker signature inside a bundle that had since been renamed and had
+  # resources added. The result verifies as broken — `code has no resources but
+  # signature indicates they must be present` — and macOS reports a broken
+  # signature as "the app is damaged", which sends you looking for a corrupt
+  # download that does not exist.
+  #
+  # "-" re-signs the whole bundle with an ad-hoc identity: no certificate, no
+  # Apple involvement, but internally consistent. Still not distributable — see
+  # DEPLOY.md for Developer ID — and it runs cleanly on the machine that built
+  # it.
+  identity: "-"
 
 dmg:
   artifactName: ${productName}-${version}-${arch}.${ext}
