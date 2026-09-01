@@ -1,0 +1,54 @@
+node_modules/
+dist/
+# electron-vite compiles here, and electron-builder writes installers here.
+# Committing them put 874 MB of Electron binaries in the first commit and got
+# the push rejected outright.
+out/
+release/
+coverage/
+.vitest/
+*.tsbuildinfo
+.DS_Store
+*.log
+
+# Environment/local config
+.env
+.env.*
+!.env.example
+
+# Package manager/runtime caches
+.npm/
+.pnpm-store/
+.yarn/
+.vite/
+.turbo/
+
+# Frontend/mobile build outputs
+frontend/.vite/
+frontend/.capacitor/
+frontend/android/
+frontend/ios/
+android/
+ios/
+
+# Native/mobile IDE outputs
+*.iml
+.gradle/
+build/
+# ...but the desktop app's build/ holds signing resources that are source, not
+# output. Without this the mac build fails on a fresh clone with a missing
+# entitlements file, which reads as a signing problem rather than a git one.
+!apps/desktop/build/
+!apps/desktop/build/**
+DerivedData/
+
+# Local vault/test artifacts
+*.kdbx
+*.kdbx.tmp
+*.kdbx.backup
+
+# Pre-M1 UI kept only as a reference while the desktop shell is rebuilt
+.attic/
+
+# Two-device sandbox: profiles and sample vaults
+.sandbox/

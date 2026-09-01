@@ -1,0 +1,99 @@
+# The whole server side of PassVault.
+#
+# Two containers: the signaling server, and a proxy that terminates TLS for it.
+# Neither holds a vault, a password, or anything else worth stealing — the
+# signaling server keeps a map of who is currently trying to reach whom, in
+# memory, and forgets it on restart.
+#
+#   cd deploy
+#   cp .env.example .env      # then set PASSVAULT_DOMAIN and ACME_EMAIL
+#   docker compose up -d
+#
+# TLS is not optional: the app refuses a plaintext connection to any server
+# that is not loopback, because a pairing offer altered in flight points a
+# device somewhere else.
+
+services:
+  signaling:
+    build:
+      context: ..
+      dockerfile: apps/signaling/Dockerfile
+    image: passvault-signaling:latest
+    restart: unless-stopped
+    environment:
+      PORT: 8787
+      # Caddy sets X-Forwarded-For; without this every request looks like it
+      # came from the proxy and shares one rate-limit bucket.
+      TRUST_PROXY: "1"
+    # Deliberately not published to the host: the only way in is through the
+    # proxy, so there is no plaintext port open to the internet.
+    expose:
+      - "8787"
+    networks: [passvault]
+    # It holds nothing on disk and needs no privileges to do its job.
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          # Rooms are bounded and swept, so this should never be approached.
+          # If it is, the container restarts rather than taking the host down.
+          memory: 256M
+
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      PASSVAULT_DOMAIN: ${PASSVAULT_DOMAIN:?set PASSVAULT_DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # The certificate and account key. Losing this volume means re-issuing on
+      # next start, which is fine but counts against Let's Encrypt rate limits.
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - signaling
+    networks: [passvault]
+
+  # Keeps a free DuckDNS name pointed at this machine.
+  #
+  # Only runs when asked for: `docker compose --profile duckdns up -d`. A cloud
+  # VM's address can change across a stop/start unless it is reserved, and a
+  # stale record means both devices fail to connect with no clue why.
+  duckdns:
+    image: curlimages/curl:latest
+    restart: unless-stopped
+    profiles: [duckdns]
+    environment:
+      # Plain defaults rather than required (`:?`) variables: compose
+      # interpolates every service in the file, including ones whose profile is
+      # not selected, so a required variable here would stop anybody with an
+      # ordinary domain from starting the stack at all. Checked below instead,
+      # where it only affects the service that needs it.
+      DUCKDNS_SUBDOMAIN: ${DUCKDNS_SUBDOMAIN:-}
+      DUCKDNS_TOKEN: ${DUCKDNS_TOKEN:-}
+    # DuckDNS infers the address from the caller, so `ip=` is deliberately left
+    # empty rather than guessed at.
+    command: >
+      sh -c 'if [ -z "$${DUCKDNS_SUBDOMAIN}" ] || [ -z "$${DUCKDNS_TOKEN}" ]; then
+        echo "DUCKDNS_SUBDOMAIN and DUCKDNS_TOKEN must be set in .env to use this profile"; exit 1;
+      fi;
+      while true; do
+        curl -fsS "https://www.duckdns.org/update?domains=$${DUCKDNS_SUBDOMAIN}&token=$${DUCKDNS_TOKEN}&ip=" || echo "duckdns update failed";
+        sleep 300;
+      done'
+    networks: [passvault]
+
+networks:
+  passvault:
+
+volumes:
+  caddy-data:
+  caddy-config:

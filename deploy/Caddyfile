@@ -1,0 +1,45 @@
+# TLS and nothing else.
+#
+# Caddy obtains and renews the certificate on its own, which is the whole
+# reason it is here: the app will not talk to a public server over plaintext,
+# so a working certificate is a requirement rather than a nicety.
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$PASSVAULT_DOMAIN} {
+	# WebSocket upgrades pass through this handler unchanged; Caddy proxies
+	# them without needing to be told about the upgrade.
+	reverse_proxy signaling:8787 {
+		# Overwrite rather than append. Caddy's default appends the real address
+		# to whatever the client sent, leaving a header the client partly
+		# controls. The server reads the last hop and so is safe either way —
+		# this makes it safe twice, and keeps a client's invented hops out of
+		# the server entirely.
+		header_up X-Forwarded-For {remote_host}
+	}
+
+	encode gzip
+
+	header {
+		# Nothing here is a browser page, but a misconfigured proxy in front of
+		# a WebSocket endpoint is worth making noisy rather than silent.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+		# Pairing codes appear in the path of a redemption request. Logging them
+		# would put a working credential into the log file, so URIs stay out.
+		format filter {
+			wrap console
+			fields {
+				request>uri delete
+			}
+		}
+	}
+}

@@ -1,0 +1,59 @@
+appId: org.passvault.desktop
+productName: PassVault
+copyright: PassVault
+
+directories:
+  output: release
+  buildResources: build
+
+# The workspace packages are compiled into out/main/index.js, so the only thing
+# that has to be collected from node_modules is the six real dependencies.
+files:
+  - out/**
+  - package.json
+  - "!**/*.map"
+  - "!**/*.ts"
+
+# node-sqlite3-wasm loads a .wasm file from its own directory at runtime, and a
+# file inside the asar archive has no path on disk to load. Unpacking it is the
+# difference between the app opening its database and failing on first launch.
+asarUnpack:
+  - node_modules/node-sqlite3-wasm/**
+
+mac:
+  category: public.app-category.utilities
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  # The app reaches a signaling server and opens WebRTC connections; on a
+  # hardened runtime, outgoing network access has to be declared.
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # Unsigned until there is a Developer ID certificate to sign with. See
+  # DEPLOY.md — an unsigned build is fine to run yourself and cannot be
+  # distributed without the recipient clearing Gatekeeper by hand.
+  identity: null
+
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: ${productName}-${version}-setup.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  # The vault file lives wherever KeePassXC keeps it, and the device key lives
+  # in the user's app data. Neither belongs to the installer.
+  deleteAppDataOnUninstall: false
+
+linux:
+  target: [AppImage]
+  category: Utility

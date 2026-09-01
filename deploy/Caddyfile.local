@@ -1,0 +1,11 @@
+# For trying the stack on your own machine, where there is no domain and no
+# certificate to be had. Plain HTTP on :80 inside the container.
+#
+# Never use this on a public server: the app refuses a plaintext connection to
+# anything that is not loopback, and rightly so.
+:80 {
+	reverse_proxy signaling:8787 {
+		header_up X-Forwarded-For {remote_host}
+	}
+	encode gzip
+}

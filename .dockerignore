@@ -1,0 +1,14 @@
+node_modules
+**/node_modules
+**/dist
+**/out
+# Copying build-info while excluding dist is an inconsistent pair: `tsc -b`
+# reads the info, concludes everything is already compiled, and emits almost
+# nothing into a dist that does not exist. The build then fails on missing
+# declarations far from the cause.
+**/*.tsbuildinfo
+.sandbox
+.git
+.github
+.claude
+*.log

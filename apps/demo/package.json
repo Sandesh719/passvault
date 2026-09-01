@@ -1,0 +1,25 @@
+{
+  "name": "@passvault/demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "build": "tsc -b",
+    "check": "tsc -b"
+  },
+  "dependencies": {
+    "@passvault/core": "workspace:*",
+    "@passvault/identity": "workspace:*",
+    "@passvault/kdbx": "workspace:*",
+    "@passvault/storage-node": "workspace:*",
+    "@passvault/sync": "workspace:*",
+    "@passvault/transport": "workspace:*",
+    "kdbxweb": "^2.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "@passvault/kdbx",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "check": "tsc -b"
+  },
+  "dependencies": {
+    "@passvault/core": "workspace:*",
+    "hash-wasm": "^4.12.0",
+    "kdbxweb": "^2.1.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

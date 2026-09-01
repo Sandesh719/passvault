@@ -1,0 +1,108 @@
+name: Release
+
+# Each installer is built on the operating system it targets.
+#
+# A Windows installer can in principle be produced from macOS through wine, but
+# the result is unverifiable on the machine that made it: nothing there can run
+# it. A Windows runner builds it and can smoke-test it, which is the difference
+# between shipping an installer and hoping.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test
+      # The end-to-end path through real KDBX files, so a release cannot ship
+      # with the stack broken below the interface.
+      - run: pnpm demo
+
+  desktop:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: package:mac
+          - os: windows-latest
+            target: package:win
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm --filter @passvault/desktop ${{ matrix.target }}
+        env:
+          # Without a token electron-builder tries to publish on a tag push.
+          GH_TOKEN: ""
+          # Signing is off until there are certificates to sign with; see
+          # DEPLOY.md. These stop electron-builder from looking for them.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Does the packaged app actually start?
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          # A build that produces an installer but an app that dies on launch is
+          # the failure this catches — most often a dependency that resolved on
+          # the build machine and not inside the package.
+          $exe = Get-ChildItem -Recurse -Filter PassVault.exe `
+            -Path apps/desktop/release/win-unpacked | Select-Object -First 1
+          if (-not $exe) { throw "no PassVault.exe was produced" }
+          $profile = Join-Path $env:RUNNER_TEMP "passvault-smoke"
+          $proc = Start-Process -FilePath $exe.FullName `
+            -ArgumentList "--user-data-dir=$profile" -PassThru
+          Start-Sleep -Seconds 20
+          if ($proc.HasExited) { throw "the app exited with $($proc.ExitCode)" }
+          Stop-Process -Id $proc.Id -Force
+          # Proof it got far enough to open its own store, rather than merely
+          # showing a window before failing.
+          if (-not (Test-Path (Join-Path $profile "metadata.db"))) {
+            throw "the app never created its database"
+          }
+          Write-Host "started, created its database, and stayed up"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: passvault-${{ matrix.os }}
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.exe
+          if-no-files-found: error
+
+  signaling:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the server image
+        run: docker build -f apps/signaling/Dockerfile -t passvault-signaling:${{ github.sha }} .
+      - name: Does it serve health?
+        run: |
+          docker run -d --name signaling -p 8787:8787 passvault-signaling:${{ github.sha }}
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8787/health; then
+              echo "healthy"; docker rm -f signaling; exit 0
+            fi
+            sleep 1
+          done
+          echo "never became healthy"; docker logs signaling; exit 1

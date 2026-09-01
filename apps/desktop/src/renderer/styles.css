@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+/**
+ * The palette, as theme tokens rather than hand-written rules.
+ *
+ * Everything downstream of this file is a Tailwind utility in the markup —
+ * there are no component classes here, because a class named for a component
+ * drifts from the component the moment either one changes. Naming the colours
+ * by role (`surface`, `rule`, `ink`) rather than by hue is what lets the theme
+ * move without touching a single element.
+ */
+@theme {
+  --color-ground: #0f1614;
+  --color-surface: #17201e;
+  --color-sunk: #121a18;
+  --color-ink: #e6edea;
+  --color-muted: #9aa8a4;
+  --color-faint: #6f7d79;
+  --color-rule: #263130;
+  --color-accent: #4cc0b1;
+  --color-accent-sunk: #123330;
+  --color-accent-line: #2f7a72;
+  --color-warn: #e0a065;
+  --color-warn-sunk: #33241a;
+  --color-warn-line: #7a5734;
+  --color-peer: #6f9fd8;
+
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* The window itself, which has no element in the tree to carry utilities. */
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  body {
+    background-color: var(--color-ground);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "@passvault/signaling",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "tsx src/main.ts",
+    "build": "tsc -b",
+    "check": "tsc -b"
+  },
+  "dependencies": {
+    "@passvault/core": "workspace:*",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "types": "dist/index.d.ts"
+}

@@ -1,0 +1,18 @@
+# Run the real stack locally, without TLS or a domain.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+#   curl http://localhost:8080/health
+#
+# Proves the parts that a domain has nothing to do with: the image builds, the
+# proxy reaches the server by service name, and WebSockets survive the hop.
+services:
+  proxy:
+    ports: !override
+      - "8080:80"
+    volumes:
+      - ./Caddyfile.local:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      PASSVAULT_DOMAIN: localhost
+      ACME_EMAIL: local@example.invalid

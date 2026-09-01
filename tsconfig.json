@@ -1,0 +1,29 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "packages/core"
+    },
+    {
+      "path": "packages/kdbx"
+    },
+    {
+      "path": "packages/identity"
+    },
+    {
+      "path": "packages/sync"
+    },
+    {
+      "path": "packages/transport"
+    },
+    {
+      "path": "packages/storage-node"
+    },
+    {
+      "path": "apps/signaling"
+    },
+    {
+      "path": "apps/demo"
+    }
+  ]
+}
