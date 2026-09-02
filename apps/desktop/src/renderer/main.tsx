@@ -97,7 +97,12 @@ function App(): React.ReactElement {
   const [enteredCode, setEnteredCode] = useState("");
   const [pairingMode, setPairingMode] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [showDetails, setShowDetails] = useState(false);
+  // Open where there is a column to spare, shut where it would push the
+  // status card off the screen. Read once: someone who collapses it has said
+  // what they want, and a resize should not overrule them.
+  const [showDetails, setShowDetails] = useState(
+    () => typeof window !== "undefined" && window.innerWidth >= 1280
+  );
 
   const bridgeRef = useRef<PeerBridge | undefined>(undefined);
   const readyPeers = useRef(new Set<string>());
@@ -247,7 +252,9 @@ function App(): React.ReactElement {
 
   return (
     <div className="grid h-screen grid-rows-[auto_1fr]">
-      <header className="flex items-center gap-4 border-b border-rule bg-surface px-5 py-3">
+      {/* Padding tracks the main column's so the logo lines up with the cards
+          at every width. */}
+      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-rule bg-surface px-4 py-3 sm:px-6 lg:px-8">
         <div className="flex items-center gap-2 font-semibold tracking-tight">
           <img src={logoUrl} alt="" aria-hidden="true" className="size-6 shrink-0" />
           <span>PassVault</span>
@@ -283,7 +290,7 @@ function App(): React.ReactElement {
             device name off the edge of the window. */}
         <span
           title={connection}
-          className={`max-w-80 overflow-hidden rounded-full border px-3 py-0.5 text-ellipsis whitespace-nowrap text-[13px] ${
+          className={`max-w-[14rem] overflow-hidden rounded-full border px-3 py-0.5 text-ellipsis whitespace-nowrap text-[13px] sm:max-w-80 ${
             connection === "Connected"
               ? "border-accent-line text-accent"
               : "border-rule text-muted"
@@ -291,10 +298,16 @@ function App(): React.ReactElement {
         >
           {connection}
         </span>
-        <span className="text-[13px] text-faint">{snapshot.device.name}</span>
+        <span className="hidden text-[13px] text-faint sm:inline">
+          {snapshot.device.name}
+        </span>
       </header>
 
-      <main className="mx-auto grid w-full max-w-3xl content-start gap-4 overflow-y-auto px-5 pt-6 pb-12">
+      {/* Fills the window instead of a fixed column. The cap is generous
+          rather than absent: cards go on growing, but a paragraph stops at a
+          readable measure, which is why the text-heavy ones carry their own
+          narrower limit below. */}
+      <main className="mx-auto grid w-full max-w-[1600px] content-start gap-4 overflow-y-auto px-4 pt-5 pb-12 sm:px-6 lg:px-8">
         {notice !== undefined ? (
           <div
             role="status"
@@ -317,7 +330,8 @@ function App(): React.ReactElement {
         ) : null}
 
         {tab === "home" ? (
-          <>
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] xl:items-start">
+            <div className="grid gap-4">
             <StatusCard
               snapshot={snapshot}
               onChooseVault={() => void api.chooseVault()}
@@ -365,21 +379,26 @@ function App(): React.ReactElement {
               </Card>
             ) : null}
 
+            </div>
+
+            {/* Collapsed on a narrow window where it would push everything
+                else off screen; open beside the status on a wide one, where
+                hiding it only wastes the space. */}
             <details
               open={showDetails}
               onToggle={(event) => setShowDetails(event.currentTarget.open)}
-              className="rounded-xl border border-rule bg-surface px-6 py-4"
+              className="rounded-xl border border-rule bg-surface px-6 py-4 xl:open:sticky xl:top-0"
             >
               <summary className="cursor-pointer text-sm text-muted focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-4">
                 Recent activity
               </summary>
-              <ul className="mt-3 grid max-h-64 gap-1.5 overflow-y-auto text-[13px] text-muted">
+              <ul className="mt-3 grid max-h-[60vh] gap-1.5 overflow-y-auto text-[13px] text-muted">
                 {snapshot.activity.slice(0, 20).map((entry, index) => (
                   <li key={`${entry}-${index}`}>{entry}</li>
                 ))}
               </ul>
             </details>
-          </>
+          </div>
         ) : null}
 
         {tab === "history" ? (
@@ -398,10 +417,11 @@ function App(): React.ReactElement {
                   {snapshot.versions.map((version) => (
                     <li
                       key={version.id}
-                      className={`flex items-center gap-3 rounded-lg border bg-sunk px-3.5 py-3 ${
+                      className={`flex flex-col items-start gap-2 rounded-lg border bg-sunk px-3.5 py-3 sm:flex-row sm:items-center sm:gap-3 ${
                         version.isCurrent ? "border-accent-line" : "border-rule"
                       }`}
                     >
+                      <div className="flex min-w-0 flex-1 items-center gap-3">
                       <span
                         aria-hidden="true"
                         className={`size-2 shrink-0 rounded-full ${
@@ -423,6 +443,7 @@ function App(): React.ReactElement {
                           {version.isCurrent ? " · in use now" : ""}
                         </span>
                       </div>
+                      </div>
                       {version.isCurrent ? (
                         <span className="rounded-full border border-accent-line px-2.5 py-0.5 text-xs text-accent">
                           In use
@@ -443,7 +464,7 @@ function App(): React.ReactElement {
         ) : null}
 
         {tab === "devices" ? (
-          <>
+          <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
             <Card>
               <Heading>Your devices</Heading>
               {snapshot.pairedDevices.length === 0 ? (
@@ -525,8 +546,10 @@ function App(): React.ReactElement {
               </ol>
             </Card>
 
-            <ConnectionCard onNotice={setNotice} />
-          </>
+            <div className="grid gap-4 xl:col-span-2">
+              <ConnectionCard onNotice={setNotice} />
+            </div>
+          </div>
         ) : null}
       </main>
     </div>
@@ -856,7 +879,9 @@ function DeviceRow(props: {
 
   return (
     <li
-      className={`flex items-center gap-3 rounded-lg border bg-sunk px-3.5 py-3 ${
+      // Stacked on a narrow window: side by side, the buttons squeezed the
+      // name and its status into a two-word column that overlapped them.
+      className={`flex flex-col items-start gap-3 rounded-lg border bg-sunk px-3.5 py-3 sm:flex-row sm:items-center ${
         paused ? "border-dashed border-rule opacity-70" : "border-rule"
       }`}
     >

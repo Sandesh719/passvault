@@ -305,7 +305,7 @@ coturn deployment**. Treat the first relay connection as untested.
 
 Verified on this machine:
 
-- 221 tests, including a functional suite that drives two real desktop service
+- 224 tests, including a functional suite that drives two real desktop service
   instances through pairing, sync, disk write-back and the security properties
 - `pnpm demo`, the full stack against real KDBX files
 - The macOS `.dmg` for arm64 and x64 — installed, launched, created its SQLite

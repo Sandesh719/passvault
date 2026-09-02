@@ -158,6 +158,9 @@ async function main() {
         stdio: "ignore",
         env: {
           ...process.env,
+          // The app now defaults to the hosted server; two instances on one
+          // machine must still meet on the loopback one this script started.
+          PASSVAULT_SIGNAL_HOST: "localhost:8787",
           PASSVAULT_DEVICE_LABEL: device.label,
           PASSVAULT_WINDOW_X: String(device.x),
           PASSVAULT_WINDOW_Y: String(device.y)

@@ -9,10 +9,17 @@ const here = fileURLToPath(new URL(".", import.meta.url));
 /**
  * The server to meet peers on, until the user picks one.
  *
- * Only a starting point: the real value lives in this device's settings, so two
- * devices in different places can be pointed at a server they both reach.
+ * A working default rather than `localhost`, which was only ever right for
+ * someone running the server on the same machine — a fresh install on a second
+ * device found nothing there and had to be configured before it could do
+ * anything at all.
+ *
+ * Overridden per device under Devices → Connection server, which is what
+ * anyone running their own server or a relay will use. `PASSVAULT_SIGNAL_HOST`
+ * overrides it at launch, which is how `pnpm two` keeps development on
+ * loopback.
  */
-const DEFAULT_SERVER_HOST = process.env["PASSVAULT_SIGNAL_HOST"] ?? "localhost:8787";
+const DEFAULT_SERVER_HOST = process.env["PASSVAULT_SIGNAL_HOST"] ?? "passvault-sandy.duckdns.org";
 
 let window: BrowserWindow | undefined;
 let services: DesktopServices | undefined;
@@ -44,7 +51,9 @@ function createWindow(): void {
     minHeight: 640,
     ...(Number.isInteger(x) && Number.isInteger(y) ? { x, y } : {}),
     title: label === undefined ? "PassVault" : `PassVault — ${label}`,
-    backgroundColor: "#10201f",
+    // Matches --color-ground, so the frame does not flash the old teal before
+    // the renderer paints.
+    backgroundColor: "#0e1117",
     webPreferences: {
       preload: join(here, "../preload/index.mjs"),
       // The renderer runs UI and WebRTC and nothing else. It gets no Node

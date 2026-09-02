@@ -95,7 +95,10 @@ export function Heading({ children }: { readonly children: React.ReactNode }): R
 }
 
 export function Body({ children }: { readonly children: React.ReactNode }): React.ReactElement {
-  return <p className="m-0 text-muted">{children}</p>;
+  // Capped independently of the card. Cards grow with the window; a line of
+  // text that grows with them becomes unreadable long before it runs out of
+  // room.
+  return <p className="m-0 max-w-prose text-muted">{children}</p>;
 }
 
 /** Secondary text: explanations, timestamps, the small print under a control. */
@@ -106,7 +109,7 @@ export function Sub({
   readonly className?: string;
   readonly children: React.ReactNode;
 }): React.ReactElement {
-  return <p className={`m-0 text-[13.5px] text-faint ${className}`}>{children}</p>;
+  return <p className={`m-0 max-w-prose text-[13.5px] text-faint ${className}`}>{children}</p>;
 }
 
 export function Row({

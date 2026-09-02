@@ -192,6 +192,27 @@ function confirmBothWhenAsked(a: Device, b: Device): () => void {
   return () => clearInterval(timer);
 }
 
+/**
+ * Wait for something the other device does on its own schedule.
+ *
+ * A one-sided sync resolves when the *initiator* is finished; the device that
+ * answered writes its file a moment later. Polling reflects that honestly —
+ * asserting the instant the initiator returns tests a guarantee the design
+ * never made.
+ */
+async function eventually(check: () => Promise<boolean>, withinMs = 4000): Promise<void> {
+  const deadline = Date.now() + withinMs;
+  for (;;) {
+    if (await check()) {
+      return;
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`condition still false after ${withinMs}ms`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
 afterEach(async () => {
   for (const dir of dirs.splice(0)) {
     await rm(dir, { recursive: true, force: true });
@@ -458,7 +479,10 @@ describe("security", () => {
     const [outcome] = await syncBoth(laptop, stranger, false);
     expect(outcome.kind).toBe("failed");
     if (outcome.kind === "failed") {
-      expect(outcome.reason).toMatch(/not paired/u);
+      // The message a person reads, not the protocol's own words: "revoked"
+      // and "not paired" name internal states and appear identically on both
+      // devices, telling neither which of them refused.
+      expect(outcome.reason).toMatch(/not set up here|does not have this one set up/u);
     }
 
     await laptop.services.stop();
@@ -721,5 +745,86 @@ describe("security", () => {
 
     await laptop.services.stop();
     await desktop.services.stop();
+  });
+});
+
+/**
+ * A sync has two halves, and either device may be the one to start.
+ *
+ * This is the case that was broken: frames for a peer with no session running
+ * were dropped, so the device that started got no reply and gave up thirty
+ * seconds later complaining about a missing hello. It looked like an idle
+ * timeout and needed both windows reloaded to clear.
+ */
+describe("either device can start a sync", () => {
+  it("answers a peer that starts one while this side is idle", async () => {
+    const laptop = await startDevice("laptop", { withVault: ["Bank"] });
+    const desktop = await startDevice("desktop");
+    link(laptop, desktop);
+
+    const stop = confirmBothWhenAsked(laptop, desktop);
+    await syncBoth(laptop, desktop, true);
+    stop();
+
+    // Only one side asks for a session now. The other is doing nothing at all,
+    // exactly as it would be while sitting on the Home tab.
+    const alone = await laptop.services.runSession("peer-b", false);
+    expect(alone.kind, JSON.stringify(alone)).toBe("completed");
+
+    await laptop.services.stop();
+    await desktop.services.stop();
+  });
+
+  it("carries a saved change to an idle device without anyone pressing sync", async () => {
+    const laptop = await startDevice("laptop", { withVault: ["Bank"] });
+    const desktop = await startDevice("desktop");
+    link(laptop, desktop);
+
+    const stop = confirmBothWhenAsked(laptop, desktop);
+    await syncBoth(laptop, desktop, true);
+    stop();
+    await desktop.services.saveVaultAs(desktop.vaultPath);
+
+    await addEntry(laptop.vaultPath, "Added-while-idle");
+    await laptop.services.recordFileNow();
+
+    // One-sided again: the whole point of auto-sync is that the other device
+    // is not participating in the decision.
+    const pushed = await laptop.services.runSession("peer-b", false);
+    expect(pushed.kind).toBe("completed");
+
+    await eventually(async () => {
+      const titles = await titlesIn(desktop.vaultPath);
+      return titles.includes("Added-while-idle");
+    });
+    expect(await titlesIn(desktop.vaultPath)).toEqual(["Added-while-idle", "Bank"]);
+
+    await laptop.services.stop();
+    await desktop.services.stop();
+  });
+
+  it("does not let an idle device pin an unknown key", async () => {
+    // The responder decides its own pairing mode. If answering a stranger
+    // implied consent to pin them, anyone who reached the rendezvous could
+    // pair themselves without a single digit being compared.
+    const laptop = await startDevice("laptop", { withVault: ["Bank"] });
+    const stranger = await startDevice("stranger", { withVault: ["Other"] });
+    link(laptop, stranger);
+
+    // The stranger is pairing, so its own side will stop and ask a human about
+    // the six digits. Answering no is what its user would do on seeing a
+    // number that matches nothing.
+    const running = stranger.services.runSession("peer-a", true);
+    const declining = setInterval(() => stranger.services.answerVerification(false), 5);
+    const outcome = await running;
+    clearInterval(declining);
+
+    expect(outcome.kind).toBe("failed");
+    // The property under test: the device that merely *answered* never pinned
+    // anything, whatever the initiator was hoping for.
+    expect((await laptop.services.snapshot()).pairedDevices).toHaveLength(0);
+
+    await laptop.services.stop();
+    await stranger.services.stop();
   });
 });

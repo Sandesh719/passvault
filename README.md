@@ -102,7 +102,7 @@ the real file watcher, then verifies the resulting file:
 pnpm demo
 ```
 
-**2. The test suite.** 221 tests covering ancestry, the protocol parser against
+**2. The test suite.** 224 tests covering ancestry, the protocol parser against
 hostile input, framing, backpressure, authentication, storage durability, and
 the architectural boundaries:
 

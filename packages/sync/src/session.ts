@@ -249,6 +249,10 @@ export class SyncSession<Credentials> {
     });
     if (outcome.kind === "reject") {
       this.send({ type: "error", code: "unauthorized", message: outcome.reason });
+      // "peer rejected" reads backwards — this side is the one refusing. The
+      // prefix is load-bearing, though: it is how the app tells "we turned
+      // them away" apart from "they turned us away", which are different
+      // sentences for the person reading them.
       throw new SessionError("unauthorized", `peer rejected: ${outcome.reason}`);
     }
 

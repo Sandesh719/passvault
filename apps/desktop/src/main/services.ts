@@ -110,6 +110,32 @@ export class DesktopServices {
 
   public constructor(private readonly deps: ServicesDeps) {
     this.peers = new IpcPeerLinkHub(deps.emitPeerFrame);
+    // A sync has two halves and either device may start one. Without this the
+    // initiator waits for a hello that the idle side never sends.
+    this.peers.onPeerInitiated = (peerId) => {
+      if (this.sessionsInFlight.has(peerId)) {
+        return;
+      }
+      void this.runSession(peerId, this.pairingUnderway());
+    };
+  }
+
+  /**
+   * Is a pairing in progress?
+   *
+   * Only matters for a session this side did not start: pinning an unknown
+   * device's key is allowed while someone is actively pairing and never
+   * otherwise. Set when a code is created or read, cleared once a session with
+   * a pinned key succeeds.
+   */
+  private pairingStartedAt: number | undefined;
+
+  private pairingUnderway(): boolean {
+    // Bounded by the same five minutes the verification prompt allows, so an
+    // abandoned pairing cannot leave the door open.
+    return (
+      this.pairingStartedAt !== undefined && Date.now() - this.pairingStartedAt < 5 * 60_000
+    );
   }
 
   public async start(): Promise<void> {
@@ -443,6 +469,7 @@ export class DesktopServices {
       inviteToken: room.inviteToken,
       signalUrl: this.signalUrl()
     };
+    this.pairingStartedAt = Date.now();
     const short = await this.issueShortCode(link);
     this.log(
       short === undefined
@@ -514,6 +541,7 @@ export class DesktopServices {
       inviteToken: parsed.offer.inviteToken,
       signalUrl: parsed.offer.signalUrl
     };
+    this.pairingStartedAt = Date.now();
     return {
       roomId: parsed.offer.roomId,
       inviteToken: parsed.offer.inviteToken,
@@ -838,17 +866,10 @@ export class DesktopServices {
         ...(conflictId === undefined ? {} : { conflictId })
       };
     } catch (error) {
-      const reason = messageOf(error);
-      // Two paired devices that have not chosen a vault yet are in a normal
-      // state, not a broken one. Calling it a failure sent people hunting for
-      // a bug that was not there.
-      this.log(
-        reason.includes("neither device is tracking a vault")
-          ? "Connected, but no vault has been shared yet. Share one from either device."
-          : `Sync failed: ${reason}`
-      );
+      const explained = explainFailure(messageOf(error));
+      this.log(explained);
       this.deps.onSnapshotChanged();
-      return { kind: "failed", reason };
+      return { kind: "failed", reason: explained };
     } finally {
       // A prompt outliving the session it belongs to would ask the user to
       // confirm a connection that no longer exists.
@@ -1200,3 +1221,61 @@ function messageOf(error: unknown): string {
 }
 
 export type { ConflictId };
+
+/**
+ * Say what went wrong in terms of what someone did.
+ *
+ * The protocol's own words leak into the interface otherwise, and two of them
+ * mislead badly. "Revoked" is the internal name for a state the interface calls
+ * *disconnected*, so a yellow bar reading "device has been revoked" describes
+ * something far more final than pressing Disconnect. Worse, the same words
+ * appear on both devices, so neither one learns which of them did it.
+ *
+ * The prefix is what tells them apart. `peer rejected:` is this device turning
+ * the other away; `peer reported:` is the other device turning this one away.
+ */
+export function explainFailure(reason: string): string {
+  const weRejected = reason.includes("peer rejected:");
+  const theyRejected = reason.includes("peer reported:");
+
+  if (reason.includes("device has been revoked")) {
+    return weRejected
+      ? "You disconnected that device here, so it was turned away. Reconnect it under Devices to sync again."
+      : "The other device has this one disconnected. Reconnect it there to sync again.";
+  }
+
+  if (reason.includes("device is not paired with this one")) {
+    return weRejected
+      ? "That device is not set up here. Connect it again under Devices."
+      : "The other device does not have this one set up. Connect them again.";
+  }
+
+  if (reason.includes("device key has changed since pairing")) {
+    // Either a reinstall or an impersonation attempt; both need a deliberate
+    // re-pairing, and neither should be described as a network problem.
+    return theyRejected
+      ? "The other device no longer recognises this one's key. Connect them again, comparing the six digits."
+      : "That device's key has changed since you connected it. Connect it again, comparing the six digits.";
+  }
+
+  if (reason.includes("the pairing numbers were not confirmed")) {
+    return "The numbers were not confirmed, so nothing was shared.";
+  }
+
+  // Two paired devices that have not chosen a vault yet are in a normal state,
+  // not a broken one. Calling it a failure sent people hunting for a bug that
+  // was not there.
+  if (reason.includes("neither device is tracking a vault")) {
+    return "Connected, but no password file has been shared yet. Set one up on either device.";
+  }
+
+  if (reason.includes("timed out waiting for")) {
+    return "The other device stopped responding. It will try again on its own when both are online.";
+  }
+
+  if (reason.includes("A sync with that device is already running")) {
+    return "Already syncing with that device.";
+  }
+
+  return `Sync failed: ${reason}`;
+}
