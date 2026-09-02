@@ -27,10 +27,13 @@ icon: build/icon.png
 
 mac:
   category: public.app-category.utilities
+  # A .dmg only. electron-builder also offers a zipped .app, but that target
+  # exists to feed auto-updates — electron-updater cannot read a dmg. With no
+  # updater wired up it is a second copy of the same app on the release page,
+  # twice the download size and one more thing to choose between. Add `zip`
+  # back the day auto-update arrives.
   target:
     - target: dmg
-      arch: [arm64, x64]
-    - target: zip
       arch: [arm64, x64]
   # The app reaches a signaling server and opens WebRTC connections; on a
   # hardened runtime, outgoing network access has to be declared.
