@@ -40,6 +40,9 @@ build/
 # entitlements file, which reads as a signing problem rather than a git one.
 !apps/desktop/build/
 !apps/desktop/build/**
+# ...but the re-inclusion above would otherwise drag Finder metadata back in
+# with the signing resources.
+apps/desktop/build/.DS_Store
 DerivedData/
 
 # Local vault/test artifacts

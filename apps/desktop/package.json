@@ -9,9 +9,10 @@
     "build": "electron-vite build",
     "check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
     "start": "electron-vite preview",
-    "package": "electron-vite build && electron-builder --config electron-builder.yml",
-    "package:mac": "electron-vite build && electron-builder --config electron-builder.yml --mac",
-    "package:win": "electron-vite build && electron-builder --config electron-builder.yml --win"
+    "package": "node scripts/check-icon.mjs && electron-vite build && electron-builder --config electron-builder.yml",
+    "package:mac": "node scripts/check-icon.mjs && electron-vite build && electron-builder --config electron-builder.yml --mac",
+    "package:win": "node scripts/check-icon.mjs && electron-vite build && electron-builder --config electron-builder.yml --win",
+    "icons": "node scripts/check-icon.mjs"
   },
   "dependencies": {
     "@noble/curves": "^1.7.0",

@@ -10,20 +10,34 @@
  * move without touching a single element.
  */
 @theme {
-  --color-ground: #0f1614;
-  --color-surface: #17201e;
-  --color-sunk: #121a18;
-  --color-ink: #e6edea;
-  --color-muted: #9aa8a4;
-  --color-faint: #6f7d79;
-  --color-rule: #263130;
-  --color-accent: #4cc0b1;
-  --color-accent-sunk: #123330;
-  --color-accent-line: #2f7a72;
+  /*
+   * Taken from the logo rather than chosen beside it.
+   *
+   * The mark is royal blue; the interface used to be teal, which read as two
+   * products sharing a window. The greys lost their green tint at the same
+   * time, so nothing competes with the one colour that carries meaning.
+   */
+  --color-ground: #0e1117;
+  --color-surface: #161a22;
+  --color-sunk: #11151c;
+  --color-ink: #e6e9ef;
+  --color-muted: #9aa2b1;
+  --color-faint: #6e7686;
+  --color-rule: #262c38;
+
+  /* #4070f0 is the logo's dominant blue; this is it, lifted for legibility as
+     text on a dark ground. */
+  --color-accent: #6c9bff;
+  --color-accent-sunk: #141c30;
+  --color-accent-line: #3a5ba8;
+
   --color-warn: #e0a065;
   --color-warn-sunk: #33241a;
   --color-warn-line: #7a5734;
-  --color-peer: #6f9fd8;
+
+  /* A peer's versions must stay tellable apart from your own at a glance, and
+     blue is no longer available for that. */
+  --color-peer: #a78bfa;
 
   --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

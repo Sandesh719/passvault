@@ -39,6 +39,11 @@ export default defineConfig({
     // explicitly or it resolves relative to that root and lands outside the app.
     root: resolve(here, "src/renderer"),
     plugins: [react(), tailwind()],
+    // The app icon lives in build/, which is outside the renderer root.
+    // Reaching it from here is what lets one file be both the icon macOS and
+    // Windows show and the mark in the window's corner, rather than two
+    // assets that drift apart.
+    server: { fs: { allow: [here] } },
     build: {
       outDir: resolve(here, "out/renderer"),
       emptyOutDir: true,

@@ -217,6 +217,49 @@ that produced it. `.github/workflows/release.yml` builds both on native runners
 and smoke-tests the Windows app by launching it and checking it creates its
 database. Push a `v*` tag to trigger it.
 
+
+### Sending the app to someone
+
+Tag a release and let CI do it:
+
+```bash
+git tag v0.1.0 && git push --tags
+```
+
+The workflow builds both platforms on their own runners, writes `SHA256SUMS.txt`,
+and opens a **draft** GitHub Release with installation notes attached. Review it,
+then publish and send the link. A draft rather than a live release, because the
+build should be looked at before anyone is invited to install it.
+
+**What the person on the other end will hit.** Neither build is signed, so both
+systems block the first launch. That warning is accurate — nothing here has been
+vouched for by Apple or Microsoft — and it is worth saying plainly rather than
+coaching someone to click past it, especially for a tool that holds passwords.
+
+| | What they see | What clears it |
+| --- | --- | --- |
+| macOS | "Apple could not verify PassVault is free of malware" | **System Settings → Privacy & Security → Open Anyway**. Right-click → Open stopped working in recent macOS |
+| Windows | "Windows protected your PC" | **More info → Run anyway** |
+
+Send the right macOS file: `arm64` for Apple Silicon, `x64` for Intel. The wrong
+one will not run.
+
+**The checksum matters more than usual here.** With no signature, it is the only
+way to tell a real download from a corrupted or substituted one — and only if
+they get the checksum from you directly rather than from the same page as the
+download.
+
+**Signing is the real fix.** A Developer ID plus notarization (Apple, $99/year)
+removes the macOS warning entirely; an OV or EV certificate does the same on
+Windows, though SmartScreen reputation takes time to build regardless. The
+secrets to set are listed under Signing above, and `identity: null` comes out of
+`electron-builder.yml` at that point.
+
+**They also need a connection server.** Yours works — it holds no vaults and no
+keys, so letting someone else meet their own devices through it costs nothing but
+a little traffic. They will need the address, and both of *their* devices must be
+pointed at the same one.
+
 ### Signing
 
 Both builds are currently **unsigned**, which is fine for your own machines and
@@ -262,7 +305,8 @@ coturn deployment**. Treat the first relay connection as untested.
 
 Verified on this machine:
 
-- 191 tests, including room sweeping, rate limits, and cross-server codes
+- 221 tests, including a functional suite that drives two real desktop service
+  instances through pairing, sync, disk write-back and the security properties
 - `pnpm demo`, the full stack against real KDBX files
 - The macOS `.dmg` for arm64 and x64 — installed, launched, created its SQLite
   database and device key

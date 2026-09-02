@@ -18,7 +18,10 @@ export default defineConfig({
       "@passvault/sync": src("sync"),
       "@passvault/transport": src("transport"),
       "@passvault/storage-node": src("storage-node"),
-      "@passvault/signaling": app("signaling")
+      "@passvault/signaling": app("signaling"),
+      // The main process reaches Electron for exactly one thing (safeStorage),
+      // and that must not stop its logic being tested outside a window.
+      electron: fileURLToPath(new URL("./tests/stubs/electron.ts", import.meta.url))
     }
   },
   test: {

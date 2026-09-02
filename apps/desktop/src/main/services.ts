@@ -163,6 +163,35 @@ export class DesktopServices {
     this.deps.onSnapshotChanged();
   }
 
+  /**
+   * Read the vault file now and record it if it changed.
+   *
+   * The watcher normally does this, after a debounce. This is the same work
+   * without the wait: useful when a change must be known to have landed before
+   * the next step — a test, or a future "check for changes now" action — and
+   * harmless otherwise, because recording an unchanged file is a no-op.
+   */
+  public async recordFileNow(): Promise<"recorded" | "unchanged" | "no-vault"> {
+    const vaultId = this.vaultId;
+    if (vaultId === undefined) {
+      return "no-vault";
+    }
+    const vault = await this.store.metadata.getVault(vaultId);
+    if (vault?.kdbxPath === undefined) {
+      return "no-vault";
+    }
+
+    const result = await this.engine.recordLocalChange(vaultId, await readVaultFile(vault.kdbxPath));
+    if (result.kind !== "recorded") {
+      return "unchanged";
+    }
+    this.clearHeldBackUpdate();
+    this.log("You saved changes in KeePassXC.");
+    this.deps.onSnapshotChanged();
+    this.deps.onSyncSuggested();
+    return "recorded";
+  }
+
   private async startWatching(kdbxPath: string): Promise<void> {
     await this.watcher?.stop();
     this.watcher = new VaultFileWatcher({

@@ -10,6 +10,9 @@ import type {
   VersionSummary,
 } from "../shared/api.js";
 import { normalizeServerHost } from "@passvault/core";
+// The same file electron-builder turns into the macOS and Windows icons, so
+// the mark in the window can never drift from the one on the dock.
+import logoUrl from "../../build/icon.png";
 import { PeerBridge } from "./peerBridge.js";
 import {
   Body,
@@ -246,7 +249,7 @@ function App(): React.ReactElement {
     <div className="grid h-screen grid-rows-[auto_1fr]">
       <header className="flex items-center gap-4 border-b border-rule bg-surface px-5 py-3">
         <div className="flex items-center gap-2 font-semibold tracking-tight">
-          <span aria-hidden="true" className="size-3 rounded-[3px] bg-accent" />
+          <img src={logoUrl} alt="" aria-hidden="true" className="size-6 shrink-0" />
           <span>PassVault</span>
         </div>
         <nav className="flex gap-1" aria-label="Sections">

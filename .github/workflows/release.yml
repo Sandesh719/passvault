@@ -12,6 +12,10 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# The release job creates a GitHub Release and uploads to it.
+permissions:
+  contents: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -106,3 +110,78 @@ jobs:
             sleep 1
           done
           echo "never became healthy"; docker logs signaling; exit 1
+
+  publish:
+    # Only on a tag: a manual run is for checking the build, not for handing
+    # anyone an installer.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [desktop, signaling]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: artifacts
+        run: |
+          # Without a signature a recipient has no way to tell a real download
+          # from a corrupted or substituted one. A checksum is weaker than
+          # signing — it only helps if they got the checksum from somewhere
+          # they trust — but it is not nothing.
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Release notes
+        run: |
+          cat > notes.md <<'NOTES'
+          ## Installing
+
+          These builds are **not signed**, so both systems will warn that the
+          app comes from an unidentified developer. That warning is accurate:
+          nothing here has been vouched for by Apple or Microsoft. Only install
+          this if you trust where you got it from.
+
+          ### macOS
+
+          Open the `.dmg` for your Mac and drag PassVault to Applications:
+
+          - Apple Silicon (M1 and later) — `PassVault-*-arm64.dmg`
+          - Intel — `PassVault-*-x64.dmg`
+
+          The first launch is blocked. To allow it: **System Settings →
+          Privacy & Security**, scroll to the note about PassVault being
+          blocked, and press **Open Anyway**. Right-clicking the app and
+          choosing Open no longer works on recent macOS.
+
+          ### Windows
+
+          Run `PassVault-*-setup.exe`. SmartScreen will say "Windows protected
+          your PC" — **More info → Run anyway**.
+
+          ### Verifying the download
+
+          `SHA256SUMS.txt` lists a checksum for every file. Compare it against
+          your download, having got the checksum from somewhere other than the
+          download itself:
+
+          ```
+          shasum -a 256 PassVault-0.1.0-arm64.dmg    # macOS
+          certutil -hashfile PassVault-0.1.0-setup.exe SHA256    # Windows
+          ```
+
+          ### After installing
+
+          Both devices need the same connection server. In the app:
+          **Devices → Connection server**, enter the address, **Check it
+          works**, **Save**. Then pair with the eight-character code.
+          NOTES
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          body_path: notes.md
+          draft: true
+          fail_on_unmatched_files: true

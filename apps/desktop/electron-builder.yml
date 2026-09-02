@@ -20,6 +20,11 @@ files:
 asarUnpack:
   - node_modules/node-sqlite3-wasm/**
 
+# One 1024x1024 PNG; electron-builder renders the .icns and .ico from it.
+# Named explicitly so that losing the file fails the build rather than quietly
+# shipping the default Electron icon, which is what happened before.
+icon: build/icon.png
+
 mac:
   category: public.app-category.utilities
   target:
