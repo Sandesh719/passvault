@@ -23,6 +23,15 @@ export interface PairedDeviceSummary {
   readonly pairedAt: string;
   readonly lastSeenAt?: string;
   readonly canReconnect: boolean;
+  /**
+   * Reachable right now: a live data channel, and a handshake that said which
+   * device is on the other end of it.
+   *
+   * Sync is only possible while both devices are online at the same moment, so
+   * "is it there?" is otherwise something a person can only infer from a sync
+   * that never happens.
+   */
+  readonly online: boolean;
 }
 
 /**
@@ -189,7 +198,20 @@ export interface DesktopApi {
   /** Main asks the window to sync, because something changed locally. */
   onSyncSuggested(listener: () => void): () => void;
 
+  /**
+   * Pick the .kdbx to track, replacing the current one if there is one.
+   *
+   * Choosing a file this device already tracks returns to it rather than
+   * importing a second copy under a new id.
+   */
   chooseVault(): Promise<AppSnapshot>;
+  /**
+   * Track nothing, keeping the history.
+   *
+   * A device holding no vault adopts whatever its peer has, so this is the
+   * step that lets both devices move onto a different file.
+   */
+  stopTrackingVault(): Promise<AppSnapshot>;
   /** Write a vault joined from a peer to a file of the user's choosing. */
   saveVaultAs(): Promise<WriteBackOutcome>;
   /** Put an earlier version back in use. The file updates by itself afterwards. */
@@ -225,6 +247,8 @@ export interface DesktopApi {
   runSession(input: { readonly peerId: string; readonly pairingMode: boolean }): Promise<SyncOutcome>;
   peerInbound(frame: PeerFrame): void;
   peerBuffered(peerId: string, bytes: number): void;
+  /** Both channels to this peer are open. Presence starts here, not at the session. */
+  peerOpen(peerId: string): void;
   peerClosed(peerId: string): void;
   onPeerOutbound(listener: (frame: PeerFrame) => void): () => void;
 

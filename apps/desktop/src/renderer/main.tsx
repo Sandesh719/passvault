@@ -150,6 +150,9 @@ function App(): React.ReactElement {
   useEffect(() => {
     const bridge = new PeerBridge(api, {
       onStatus: setConnection,
+      // The chip is too narrow for a sentence; anything with a next step in it
+      // goes to the notice bar, where it is shown whole.
+      onNotice: setNotice,
       onPeer: (peerId) => {
         readyPeers.current.add(peerId);
         void runSync(peerId);
@@ -358,6 +361,10 @@ function App(): React.ReactElement {
                 otherVersion={other}
                 onNotice={setNotice}
               />
+            ) : null}
+
+            {snapshot.vault?.kdbxPath !== undefined ? (
+              <VaultFileCard path={snapshot.vault.kdbxPath} />
             ) : null}
 
             {snapshot.pairedDevices.length === 0 &&
@@ -877,6 +884,16 @@ function DeviceRow(props: {
   const [confirming, setConfirming] = useState(false);
   const paused = device.trust === "revoked";
 
+  // Two devices can only sync while both are online at once, so "offline" is
+  // the explanation for an absence of syncing rather than a fault to report.
+  const lastSynced =
+    device.lastSeenAt === undefined ? "never synced" : `last synced ${whenever(device.lastSeenAt)}`;
+  const presence = paused
+    ? "Disconnected — not syncing. You can reconnect it."
+    : device.online
+      ? `Online · ${lastSynced}`
+      : `Offline · ${lastSynced}. It will sync next time you are both online.`;
+
   return (
     <li
       // Stacked on a narrow window: side by side, the buttons squeezed the
@@ -885,15 +902,18 @@ function DeviceRow(props: {
         paused ? "border-dashed border-rule opacity-70" : "border-rule"
       }`}
     >
+      {/* Presence leads the row, because it is the answer to the question
+          someone actually has: nothing can sync while this is off. */}
+      <span
+        title={presence}
+        className={`mt-1.5 size-2 shrink-0 rounded-full sm:mt-0 ${
+          paused ? "bg-faint" : device.online ? "bg-accent" : "bg-rule ring-1 ring-faint"
+        }`}
+      />
+
       <div className="grid min-w-0 flex-1 gap-0.5">
         <strong className="font-medium text-ink">{device.name}</strong>
-        <span className="text-[13px] text-faint">
-          {paused
-            ? "Disconnected — not syncing. You can reconnect it."
-            : device.lastSeenAt === undefined
-              ? "Connected, not synced yet"
-              : `Last synced ${whenever(device.lastSeenAt)}`}
-        </span>
+        <span className="text-[13px] text-faint">{presence}</span>
       </div>
 
       {confirming ? (
@@ -924,13 +944,17 @@ function DeviceRow(props: {
           <Button
             disabled={!device.canReconnect}
             title={
-              device.canReconnect
-                ? "Connect and sync now"
-                : "This device was connected before reconnecting was supported. Connect it again."
+              !device.canReconnect
+                ? "This device was connected before reconnecting was supported. Connect it again."
+                : device.online
+                  ? "Connect and sync now"
+                  : // Still worth pressing: it waits in the shared room, so the
+                    // sync happens by itself the moment the other one appears.
+                    "Wait for it. Syncing starts on its own once it comes online."
             }
             onClick={props.onSyncNow}
           >
-            Sync now
+            {device.online ? "Sync now" : "Wait for it"}
           </Button>
           <Button
             tone="ghost"
@@ -942,6 +966,98 @@ function DeviceRow(props: {
         </Row>
       )}
     </li>
+  );
+}
+
+/**
+ * Changing which file this device tracks.
+ *
+ * Both actions are one-sided — they change this device and nothing else — so
+ * each spells out what the other device does afterwards, rather than leaving it
+ * to be discovered as a failed sync.
+ */
+function VaultFileCard(props: { readonly path: string }): React.ReactElement {
+  const [confirming, setConfirming] = useState<"switch" | "stop" | undefined>(
+    undefined,
+  );
+  const name = fileNameOf(props.path);
+
+  if (confirming === "switch") {
+    return (
+      <Card>
+        <Heading>Use a different file?</Heading>
+        <Body>
+          This device will track the file you pick and stop tracking{" "}
+          <strong className="text-ink">{name}</strong>. Nothing is deleted —
+          both files stay on disk and both histories are kept.
+        </Body>
+        <Sub>
+          Your other devices stay on the old file until they switch too. Until
+          then, syncing with them will say the two are tracking different files.
+        </Sub>
+        <Row>
+          <Button
+            tone="primary"
+            onClick={() => {
+              setConfirming(undefined);
+              void api.chooseVault();
+            }}
+          >
+            Choose a file…
+          </Button>
+          <Button tone="ghost" onClick={() => setConfirming(undefined)}>
+            Cancel
+          </Button>
+        </Row>
+      </Card>
+    );
+  }
+
+  if (confirming === "stop") {
+    return (
+      <Card>
+        <Heading>Stop tracking this file?</Heading>
+        <Body>
+          This device will hold no file. Its history is kept and{" "}
+          <strong className="text-ink">{name}</strong> is left on disk
+          untouched.
+        </Body>
+        <Sub>
+          This is how you move onto a file another device is already sharing:
+          stop here, then sync — the other device&rsquo;s file arrives by
+          itself.
+        </Sub>
+        <Row>
+          <Button
+            tone="primary"
+            onClick={() => {
+              setConfirming(undefined);
+              void api.stopTrackingVault();
+            }}
+          >
+            Stop tracking it
+          </Button>
+          <Button tone="ghost" onClick={() => setConfirming(undefined)}>
+            Cancel
+          </Button>
+        </Row>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <Heading>The file on this device</Heading>
+      <Sub className="font-mono break-all">{props.path}</Sub>
+      <Row>
+        <Button onClick={() => setConfirming("switch")}>
+          Use a different file…
+        </Button>
+        <Button tone="ghost" onClick={() => setConfirming("stop")}>
+          Stop tracking it
+        </Button>
+      </Row>
+    </Card>
   );
 }
 

@@ -25,6 +25,7 @@ const api: DesktopApi = {
   },
 
   chooseVault: () => ipcRenderer.invoke("vault:choose") as Promise<AppSnapshot>,
+  stopTrackingVault: () => ipcRenderer.invoke("vault:stopTracking") as Promise<AppSnapshot>,
   saveVaultAs: () => ipcRenderer.invoke("vault:saveAs"),
   restoreVersion: (versionId) =>
     ipcRenderer.invoke("version:restore", versionId) as Promise<AppSnapshot>,
@@ -51,6 +52,7 @@ const api: DesktopApi = {
   runSession: (input) => ipcRenderer.invoke("session:run", input),
   peerInbound: (frame) => ipcRenderer.send("peer:inbound", frame),
   peerBuffered: (peerId, bytes) => ipcRenderer.send("peer:buffered", peerId, bytes),
+  peerOpen: (peerId) => ipcRenderer.send("peer:open", peerId),
   peerClosed: (peerId) => ipcRenderer.send("peer:closed", peerId),
   onPeerOutbound: (listener) => {
     const handler = (_event: unknown, frame: PeerFrame): void => listener(frame);

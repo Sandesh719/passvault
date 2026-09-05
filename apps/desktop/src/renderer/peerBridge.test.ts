@@ -120,9 +120,15 @@ async function createRoom(): Promise<{ roomId: string; inviteToken: string; sign
   return { ...room, signalUrl: `ws://127.0.0.1:${server.port}/signal` };
 }
 
-function makeBridge(statuses: string[]): PeerBridge {
+/**
+ * `statuses` collects the short header text; `notices` the long, actionable
+ * kind. They are separate because the header chip ellipsises, so a status that
+ * needs reading to the end is one nobody reads.
+ */
+function makeBridge(statuses: string[], notices: string[] = []): PeerBridge {
   const bridge = new PeerBridge(stubApi(), {
     onStatus: (status) => statuses.push(status),
+    onNotice: (notice) => notices.push(notice),
     onPeer: () => statuses.push("PEER-READY"),
     onClosed: () => statuses.push("PEER-CLOSED")
   });
@@ -157,14 +163,14 @@ describe("PeerBridge against a real signaling server", () => {
     // The window that created the code connects first and waits.
     makeBridge(hostStatuses).connect(room);
     await waitFor(
-      () => hostStatuses.includes("Waiting for the other device to join."),
+      () => hostStatuses.includes("Waiting for your other device"),
       "the host to join the room"
     );
 
     // The window that pasted the code joins second and starts negotiation.
     makeBridge(guestStatuses).connect(room);
     await waitFor(
-      () => guestStatuses.includes("Found the other device. Connecting."),
+      () => guestStatuses.includes("Connecting to your other device…"),
       "the guest to see the host"
     );
 
@@ -177,47 +183,55 @@ describe("PeerBridge against a real signaling server", () => {
       "the answer to reach the offerer"
     );
 
-    expect(hostStatuses).not.toContain("Signaling connection closed before the other device appeared.");
-    expect(guestStatuses).not.toContain("Signaling connection closed before the other device appeared.");
+    expect(hostStatuses).not.toContain("Not connected");
+    expect(guestStatuses).not.toContain("Not connected");
   }, 30_000);
 
   it("reports a refused join instead of failing silently", async () => {
     const room = await createRoom();
     const statuses: string[] = [];
-    makeBridge(statuses).connect({ ...room, inviteToken: "not-the-right-token" });
+    const notices: string[] = [];
+    makeBridge(statuses, notices).connect({ ...room, inviteToken: "not-the-right-token" });
 
-    await waitFor(
-      () => statuses.some((status) => status.startsWith("Signaling server refused:")),
-      "the refusal to surface"
-    );
-    expect(statuses.find((status) => status.startsWith("Signaling server refused:"))).toMatch(
-      /invite token/u
-    );
+    await waitFor(() => notices.length > 0, "the refusal to surface");
+    // The chip says only that something was refused; the reason, and what to do
+    // about it, go where there is room to read them.
+    expect(statuses).toContain("Server refused");
+    expect(notices[0]).toMatch(/invite token/u);
+    expect(notices[0]).toMatch(/expired/u);
   }, 30_000);
 
-  it("says something useful when the signaling server is not running", async () => {
+  it("names the address to check when the server cannot be reached", async () => {
     const statuses: string[] = [];
-    makeBridge(statuses).connect({
+    const notices: string[] = [];
+    makeBridge(statuses, notices).connect({
       signalUrl: "ws://127.0.0.1:1/signal",
       roomId: "r",
       inviteToken: "t"
     });
 
-    await waitFor(() => statuses.some((status) => status.includes("pnpm signaling")), "the hint");
+    await waitFor(() => notices.length > 0, "the problem to surface");
+    // It used to tell whoever hit this to run `pnpm signaling`, which is an
+    // instruction for someone working on the app, not someone using it.
+    expect(notices.join(" ")).not.toMatch(/pnpm/u);
+    expect(notices.join(" ")).toMatch(/127\.0\.0\.1:1/u);
+    expect(notices.join(" ")).toMatch(/Connection server/u);
   }, 30_000);
 
   it("stays quiet when the disconnect was our own doing", async () => {
     const room = await createRoom();
     const statuses: string[] = [];
-    const bridge = makeBridge(statuses);
+    const notices: string[] = [];
+    const bridge = makeBridge(statuses, notices);
     bridge.connect(room);
-    await waitFor(() => statuses.includes("Connected to the signaling server."), "the connection");
+    await waitFor(() => statuses.includes("Finding your other device…"), "the connection");
 
     bridge.disconnect();
     await new Promise((resolve) => setTimeout(resolve, 300));
 
     // Reporting our own teardown as a failure is how the original bug disguised
     // itself as a server problem.
-    expect(statuses.filter((status) => status.includes("closed"))).toEqual([]);
+    expect(statuses).not.toContain("Not connected");
+    expect(notices).toEqual([]);
   }, 30_000);
 });

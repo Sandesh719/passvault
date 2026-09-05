@@ -163,6 +163,11 @@ function registerHandlers(): void {
     return requireServices().saveVaultAs(result.filePath);
   });
 
+  ipcMain.handle("vault:stopTracking", async () => {
+    await requireServices().stopTrackingVault();
+    return requireServices().snapshot();
+  });
+
   ipcMain.handle("vault:applyPending", async () => requireServices().applyPendingUpdate());
 
   ipcMain.handle("version:restore", async (_event, versionId: string) => {
@@ -232,7 +237,13 @@ function registerHandlers(): void {
   ipcMain.on("peer:buffered", (_event, peerId: string, bytes: number) => {
     requireServices().peers.reportBuffered(peerId, bytes);
   });
+  ipcMain.on("peer:open", (_event, peerId: string) => {
+    requireServices().peerOpened(peerId);
+  });
   ipcMain.on("peer:closed", (_event, peerId: string) => {
+    // The channel is genuinely gone — only the renderer's teardown sends this,
+    // never the end of a session — so presence ends here as well as the link.
+    requireServices().peerGone(peerId);
     requireServices().peers.closeLink(peerId);
   });
 

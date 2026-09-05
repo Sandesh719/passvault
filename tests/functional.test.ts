@@ -27,7 +27,7 @@ const { argon2d, argon2i, argon2id } = await import("hash-wasm");
 
 const { mkdtemp, readFile, writeFile, rm, stat } = await import("node:fs/promises");
 const { tmpdir } = await import("node:os");
-const { join } = await import("node:path");
+const { dirname, join } = await import("node:path");
 
 type Services = InstanceType<typeof DesktopServices>;
 type PeerFrame = import("../apps/desktop/src/shared/api.js").PeerFrame;
@@ -482,7 +482,10 @@ describe("security", () => {
       // The message a person reads, not the protocol's own words: "revoked"
       // and "not paired" name internal states and appear identically on both
       // devices, telling neither which of them refused.
-      expect(outcome.reason).toMatch(/not set up here|does not have this one set up/u);
+      expect(outcome.reason).not.toMatch(/peer rejected|peer reported|unauthorized/u);
+      expect(outcome.reason).toMatch(/not set up on this one|does not have this one set up/u);
+      // And it points at the screen where the next step actually is.
+      expect(outcome.reason).toMatch(/Devices|that device/u);
     }
 
     await laptop.services.stop();
@@ -739,9 +742,125 @@ describe("security", () => {
 
     expect(outcome.kind).toBe("failed");
     if (outcome.kind === "failed") {
-      // And says so in a way that points at the cause.
-      expect(outcome.reason).toMatch(/different vault|separately/u);
+      // Both devices detect this themselves and so both show it at once. Naming
+      // the two files is what keeps the advice from being "you go first" on
+      // both screens: each person can see which of the two is theirs.
+      expect(outcome.reason).toContain("laptop.kdbx");
+      expect(outcome.reason).toContain("desktop.kdbx");
+      // And the way out is an action in the app, not advice to start over.
+      expect(outcome.reason).toMatch(/Stop tracking it/u);
     }
+
+    await laptop.services.stop();
+    await desktop.services.stop();
+  });
+});
+
+describe("changing which file is tracked", () => {
+  it("replaces the tracked file, and still has it after a restart", async () => {
+    const laptop = await startDevice("laptop", { withVault: ["Bank"] });
+    const first = (await laptop.services.snapshot()).vault?.id;
+
+    const second = join(dirname(laptop.vaultPath), "second.kdbx");
+    await makeVault(second, ["Email"]);
+    await laptop.services.bindVault(second);
+
+    const after = await laptop.services.snapshot();
+    expect(after.vault?.kdbxPath).toBe(second);
+    expect(after.vault?.id).not.toBe(first);
+    await laptop.services.stop();
+
+    // The choice used to live only in memory: whichever vault row came back
+    // first won on the next launch, so switching quietly undid itself.
+    const revived = new DesktopServices({
+      appDataDir: laptop.appData,
+      defaultServerHost: "localhost:8787",
+      emitPeerFrame: () => {},
+      onSnapshotChanged: () => {},
+      onSyncSuggested: () => {}
+    });
+    await revived.start();
+    expect((await revived.snapshot()).vault?.kdbxPath).toBe(second);
+    await revived.stop();
+  });
+
+  it("goes back to a file it already tracks instead of importing it twice", async () => {
+    const laptop = await startDevice("laptop", { withVault: ["Bank"] });
+    const original = (await laptop.services.snapshot()).vault?.id;
+
+    const second = join(dirname(laptop.vaultPath), "second.kdbx");
+    await makeVault(second, ["Email"]);
+    await laptop.services.bindVault(second);
+    await laptop.services.bindVault(laptop.vaultPath);
+
+    const back = await laptop.services.snapshot();
+    // A second import would mint a new id over identical bytes, forking the
+    // history against itself with no shared ancestor to reconcile it.
+    expect(back.vault?.id).toBe(original);
+    expect(back.versions).toHaveLength(1);
+
+    await laptop.services.stop();
+  });
+
+  it("lets both devices move onto one device's file", async () => {
+    // The mistake the app previously had no way out of: a file set up
+    // separately on each device.
+    const laptop = await startDevice("laptop", { withVault: ["Bank"] });
+    const desktop = await startDevice("desktop", { withVault: ["Email"] });
+    link(laptop, desktop);
+
+    const stop = confirmBothWhenAsked(laptop, desktop);
+    const [refused] = await syncBoth(laptop, desktop, true);
+    stop();
+    expect(refused.kind).toBe("failed");
+
+    // The remedy the message now names. Pairing already succeeded — the two
+    // vaults are what could not be reconciled — so this session needs no
+    // pairing mode.
+    await desktop.services.stopTrackingVault();
+    expect((await desktop.services.snapshot()).state.kind).toBe("needs-setup");
+    // The file itself is left alone; only the tracking stopped.
+    expect((await stat(desktop.vaultPath)).size).toBeGreaterThan(0);
+
+    const [left, right] = await syncBoth(laptop, desktop, false);
+    expect(left.kind).toBe("completed");
+    expect(right.kind).toBe("completed");
+
+    const joined = await desktop.services.snapshot();
+    expect(joined.vault?.id).toBe((await laptop.services.snapshot()).vault?.id);
+    expect(joined.state.kind).toBe("needs-file");
+
+    await laptop.services.stop();
+    await desktop.services.stop();
+  });
+});
+
+describe("knowing whether the other device is there", () => {
+  it("reports a device online only once a live channel is tied to it", async () => {
+    const laptop = await startDevice("laptop", { withVault: ["Bank"] });
+    const desktop = await startDevice("desktop");
+    link(laptop, desktop);
+
+    const stop = confirmBothWhenAsked(laptop, desktop);
+    await syncBoth(laptop, desktop, true);
+    stop();
+
+    // Paired, but nothing has said a channel is open, so nothing is claimed.
+    expect((await laptop.services.snapshot()).pairedDevices[0]?.online).toBe(false);
+
+    // A channel alone is not enough: a signaling peer id is a random UUID that
+    // says nothing about who is behind it until the handshake proves it.
+    laptop.services.peerOpened("peer-b");
+    expect((await laptop.services.snapshot()).pairedDevices[0]?.online).toBe(false);
+
+    await syncBoth(laptop, desktop, false);
+    expect((await laptop.services.snapshot()).pairedDevices[0]?.online).toBe(true);
+
+    // And presence must outlive the session: closeLink runs at the end of every
+    // sync, so only the channel closing may take a device offline.
+    expect((await laptop.services.snapshot()).pairedDevices[0]?.online).toBe(true);
+    laptop.services.peerGone("peer-b");
+    expect((await laptop.services.snapshot()).pairedDevices[0]?.online).toBe(false);
 
     await laptop.services.stop();
     await desktop.services.stop();

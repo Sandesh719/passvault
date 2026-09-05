@@ -67,6 +67,13 @@ Two entry points, and the difference matters:
   what would make the two copies permanently un-syncable — hence the `unrelated`
   divergence verdict existing at all.
 
+Which vault is active is persisted under the `activeVault` settings key, so
+`bindVault` can *replace* the tracked file and have that survive a restart.
+Choosing a file the device already tracks returns to it rather than importing a
+second copy under a new id. `stopTrackingVault` clears the choice without
+deleting anything — and because a device holding nothing adopts its peer's
+vault, that is the route for moving both devices onto a different file.
+
 ### 2. Detecting a local change
 
 `VaultFileWatcher` (chokidar) watches the vault path. This is harder than "watch
@@ -238,6 +245,19 @@ Protocol errors carry a load-bearing prefix:
 vocabulary into a sentence that says which device did what. Without it, both
 screens showed the same "device has been revoked", which described something far
 more final than pressing Disconnect and told neither user which end to fix.
+
+### Knowing whether a peer is reachable
+
+Presence has two halves, and both are needed before a device can be shown as
+online. The renderer reports `peerOpen` when both data channels open and
+`peerClosed` when they tear down; the handshake's `authenticated` event is what
+attributes that channel to a *device*, since a signaling peer id is a random
+per-launch UUID that says nothing about who is behind it.
+
+Presence is deliberately **not** derived from the `PeerLink` lifetime:
+`closeLink` runs at the end of every session while the channel stays open, so
+tying the two together would show a device going offline seconds after a
+successful sync.
 
 ### Background behaviour
 

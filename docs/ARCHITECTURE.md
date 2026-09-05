@@ -253,8 +253,21 @@ the engine. The architecture test keeps that promise honest today.
 
 ## Known limits (from the code, not aspiration)
 
-- **One vault at a time**, and only the most recently paired device is
-  auto-reconnected at startup (`standingRendezvous` uses `LIMIT 1`).
+- **One vault at a time.** A device may *change* which file it tracks
+  (`bindVault` replaces; `stopTrackingVault` clears), and the choice is
+  persisted under the `activeVault` settings key. But a session still negotiates
+  exactly one vault, so sharing two different files with the same peer is not
+  possible — to move both devices onto a different file, one switches and the
+  other stops tracking, then adopts it on the next sync.
+- **Only the most recently paired device is auto-reconnected** at startup
+  (`standingRendezvous` uses `LIMIT 1`), and the signaling WebSocket has **no
+  reconnect logic** — if it drops, this device silently leaves the room until
+  the app restarts or someone presses Sync now. These two together are the most
+  likely cause of syncing that quietly stops.
+- **Sync requires the two devices to be online at the same moment.** Nothing is
+  lost when they are not — changes are durable in the local DAG — but nothing
+  moves either. This is the direct consequence of the server never storing the
+  vault.
 - **Transfers do not resume** across a reconnect. The `chunk_bitmap` column
   exists in the schema but nothing writes it.
 - Several `MetadataStore` methods are implemented and tested but **never called

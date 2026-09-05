@@ -5,9 +5,27 @@ const BULK = "passvault/bulk";
 const LOW_WATER_BYTES = 256 * 1024;
 
 export interface BridgeEvents {
+  /**
+   * A few words for the header chip.
+   *
+   * The chip is a fixed width and ellipsises, so a sentence put here is a
+   * sentence nobody reads the end of. Anything the person may have to act on
+   * belongs in `onNotice`.
+   */
   readonly onStatus: (status: string) => void;
+  /** Something gone wrong that has a next step. Shown in full, and dismissable. */
+  readonly onNotice: (message: string) => void;
   readonly onPeer: (peerId: string) => void;
   readonly onClosed: (peerId: string) => void;
+}
+
+/** The part of a signaling URL worth showing someone: `wss://host/signal` → `host`. */
+function serverName(signalUrl: string): string {
+  try {
+    return new URL(signalUrl).host;
+  } catch {
+    return signalUrl;
+  }
 }
 
 /**
@@ -61,12 +79,13 @@ export class PeerBridge {
     this.closingDeliberately = false;
     this.detachOutbound = this.api.onPeerOutbound((frame) => this.forwardOutbound(frame));
 
-    this.events.onStatus(`Connecting to ${input.signalUrl}…`);
+    const server = serverName(input.signalUrl);
+    this.events.onStatus("Connecting…");
     const socket = new WebSocket(input.signalUrl);
     this.socket = socket;
 
     socket.addEventListener("open", () => {
-      this.events.onStatus("Connected to the signaling server.");
+      this.events.onStatus("Finding your other device…");
       socket.send(
         JSON.stringify({
           type: "join",
@@ -81,11 +100,14 @@ export class PeerBridge {
       void this.handleSignal(JSON.parse(String(event.data)) as SignalMessage);
     });
 
-    socket.addEventListener("error", () =>
-      this.events.onStatus(
-        `Could not reach the signaling server at ${input.signalUrl}. Is it running? (pnpm signaling)`
-      )
-    );
+    socket.addEventListener("error", () => {
+      this.events.onStatus("Can't reach the server");
+      // The address is the thing to check, and it is the thing someone can
+      // actually change — so name it, and say where.
+      this.events.onNotice(
+        `Could not reach ${server}. Check that both devices are online and that the address under Devices → Connection server is right.`
+      );
+    });
 
     socket.addEventListener("close", (event) => {
       if (this.closingDeliberately) {
@@ -93,12 +115,13 @@ export class PeerBridge {
       }
       const detail = (event as CloseEvent).reason;
       // A close with no reason and no prior handshake almost always means the
-      // server was never reachable, which is a different problem than a peer
+      // server was never reachable, which is a different problem from a peer
       // dropping mid-session — say which.
-      this.events.onStatus(
+      this.events.onStatus("Not connected");
+      this.events.onNotice(
         detail.length > 0
-          ? `Signaling connection closed: ${detail}`
-          : "Signaling connection closed before the other device appeared."
+          ? `${server} closed the connection: ${detail}`
+          : `Lost the connection to ${server} before your other device appeared. Press “Sync now” on the Devices tab to try again.`
       );
     });
   }
@@ -118,8 +141,8 @@ export class PeerBridge {
     if (message.type === "joined") {
       this.events.onStatus(
         message.existingPeerIds.length === 0
-          ? "Waiting for the other device to join."
-          : "Found the other device. Connecting."
+          ? "Waiting for your other device"
+          : "Connecting to your other device…"
       );
       for (const peerId of message.existingPeerIds) {
         // Exactly one side must create the channels; the peer already in the
@@ -142,7 +165,10 @@ export class PeerBridge {
     }
     if (message.type === "error") {
       // Previously dropped on the floor, so a rejected join looked like silence.
-      this.events.onStatus(`Signaling server refused: ${message.message}`);
+      this.events.onStatus("Server refused");
+      this.events.onNotice(
+        `The connection server would not let this device in: ${message.message}. If you were pairing, the code may have expired — ask for a new one.`
+      );
     }
   }
 
@@ -160,8 +186,12 @@ export class PeerBridge {
     });
     connection.addEventListener("connectionstatechange", () => {
       if (connection.connectionState === "failed") {
-        this.events.onStatus(
-          "Direct connection failed. A TURN relay would be needed on this network."
+        this.events.onStatus("Couldn't connect");
+        // Both devices reached the server, so this is the network between them
+        // — nothing about the address or the code is wrong, and saying "check
+        // the server" here sends people to fix something that is already fine.
+        this.events.onNotice(
+          "Both devices found each other, but no direct connection could be made — some networks, mobile ones especially, block that. Add a relay under Devices → Connection server to get past it."
         );
       }
     });
@@ -209,6 +239,9 @@ export class PeerBridge {
       return;
     }
     this.ready.add(peerId);
+    // Before the session, not after: a device is reachable the moment the
+    // channels open, and the handshake that names it may take a moment more.
+    this.api.peerOpen(peerId);
     this.events.onPeer(peerId);
   }
 

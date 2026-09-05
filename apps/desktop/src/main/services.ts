@@ -35,7 +35,7 @@ import {
   writeVaultFileAtomic,
   type LocalStore
 } from "@passvault/storage-node";
-import { SyncEngine, SyncSession } from "@passvault/sync";
+import { SessionError, SyncEngine, SyncSession } from "@passvault/sync";
 import type {
   AcceptedPairing,
   AppSnapshot,
@@ -51,6 +51,15 @@ import { SettingsStore, type ConnectionSettings } from "./settings.js";
 import { createSqliteTrustStore } from "./sqliteTrustStore.js";
 
 const MAX_ACTIVITY = 200;
+
+/**
+ * Which vault this device is currently tracking.
+ *
+ * Persisted because the answer became ambiguous the moment a second vault could
+ * exist: picking whichever row came back first meant that changing file worked
+ * until the app was restarted, and then silently reverted.
+ */
+const ACTIVE_VAULT_KEY = "activeVault";
 
 export interface Rendezvous {
   readonly roomId: string;
@@ -90,6 +99,19 @@ export class DesktopServices {
   private readonly activity: string[] = [];
   /** One session per peer at a time; a second would fight the first for the link. */
   private readonly sessionsInFlight = new Set<string>();
+  /**
+   * Peers with a live data channel, and which device each turned out to be.
+   *
+   * Deliberately not derived from the link's lifetime: `closeLink` runs at the
+   * end of every session while the channel stays open, so tying presence to it
+   * would report a device as offline seconds after a successful sync. The
+   * renderer owns the channels and says when they open and close.
+   *
+   * The device id is the value rather than the key because it is unknown until
+   * the handshake proves it — a signaling peer id is a random per-launch UUID
+   * that says nothing about who is behind it.
+   */
+  private readonly livePeers = new Map<string, DeviceId | undefined>();
   /** The room this device is currently sitting in, pending a peer identifying itself. */
   private pendingRendezvous: Rendezvous | undefined;
   /** Set when the file could not be updated because KeePassXC held it open. */
@@ -154,17 +176,23 @@ export class DesktopServices {
     });
 
     if (this.identity.atRestUnprotected) {
-      this.log("This system has no keychain available, so the device key is stored unencrypted.");
+      this.log(
+        "This system has no keychain, so this device's private key is stored unencrypted. Anyone who can read your files could copy it and impersonate this device."
+      );
     }
 
     const vaults = await this.store.metadata.listVaults();
-    const existing = vaults[0];
-    if (existing !== undefined) {
-      this.vaultId = existing.id;
-      if (existing.kdbxPath !== undefined) {
-        await this.startWatching(existing.kdbxPath);
+    const stored = this.storedActiveVaultId();
+    // Falls back to the newest rather than the oldest: with no recorded choice,
+    // the vault someone set up most recently is the one they meant.
+    const active =
+      vaults.find((vault) => String(vault.id) === stored) ?? vaults[vaults.length - 1];
+    if (active !== undefined) {
+      this.setActiveVault(active.id);
+      if (active.kdbxPath !== undefined) {
+        await this.startWatching(active.kdbxPath);
       }
-      this.log(`Reopened ${existing.name}.`);
+      this.log(`Reopened ${active.name}.`);
     } else {
       this.log("Choose a .kdbx vault to begin.");
     }
@@ -172,20 +200,123 @@ export class DesktopServices {
 
   public async stop(): Promise<void> {
     await this.watcher?.stop();
+    this.livePeers.clear();
     this.peers.closeAll();
     this.store?.close();
   }
 
+  // ---- who is reachable right now --------------------------------------
+
+  /** The renderer opened both channels to a peer. Which device it is comes later. */
+  public peerOpened(peerId: string): void {
+    if (this.livePeers.has(peerId)) {
+      return;
+    }
+    this.livePeers.set(peerId, undefined);
+    this.deps.onSnapshotChanged();
+  }
+
+  public peerGone(peerId: string): void {
+    if (this.livePeers.delete(peerId)) {
+      this.deps.onSnapshotChanged();
+    }
+  }
+
+  private onlineDeviceIds(): ReadonlySet<string> {
+    const online = new Set<string>();
+    for (const deviceId of this.livePeers.values()) {
+      if (deviceId !== undefined) {
+        online.add(String(deviceId));
+      }
+    }
+    return online;
+  }
+
+  // ---- which vault is being tracked ------------------------------------
+
+  private setActiveVault(vaultId: VaultId | undefined): void {
+    this.vaultId = vaultId;
+    if (vaultId === undefined) {
+      this.store.metadata.connection
+        .prepare("DELETE FROM settings WHERE key = ?")
+        .run(ACTIVE_VAULT_KEY);
+      return;
+    }
+    this.store.metadata.connection
+      .prepare(
+        `INSERT INTO settings (key, value) VALUES (@key, @value)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+      )
+      .run({ key: ACTIVE_VAULT_KEY, value: String(vaultId) });
+  }
+
+  private storedActiveVaultId(): string | undefined {
+    const row = this.store.metadata.connection
+      .prepare("SELECT value FROM settings WHERE key = ?")
+      .get(ACTIVE_VAULT_KEY) as { value: string } | undefined;
+    return row?.value;
+  }
+
   // ---- vault ---------------------------------------------------------
 
+  /**
+   * Choose the file this device tracks, replacing whatever it tracked before.
+   *
+   * One-sided by nature: the other device stays on its own file until it
+   * switches too, and the next session between them will say so rather than
+   * merging two unrelated histories.
+   */
   public async bindVault(kdbxPath: string): Promise<void> {
+    const replacing = this.vaultId !== undefined;
+
+    // Picking a file this device already knows means going back to it. Importing
+    // it again would mint a second vault id over identical bytes, forking the
+    // history against itself in a way nothing can reconcile.
+    const known = (await this.store.metadata.listVaults()).find(
+      (vault) => vault.kdbxPath === kdbxPath
+    );
+    if (known !== undefined) {
+      this.setActiveVault(known.id);
+      await this.startWatching(kdbxPath);
+      // It may well have been edited while this device was not watching it.
+      await this.recordFileNow();
+      this.log(`Back to ${known.name}.`);
+      this.deps.onSnapshotChanged();
+      return;
+    }
+
     const bytes = await readVaultFile(kdbxPath);
-    const name = kdbxPath.split("/").pop() ?? "vault.kdbx";
+    // Split on both separators: on Windows the POSIX-only form left the whole
+    // path as the vault's name.
+    const name = kdbxPath.split(/[/\\]/u).pop() ?? "vault.kdbx";
 
     const { vault } = await this.engine.importVault({ name, bytes, kdbxPath });
-    this.vaultId = vault.id;
+    this.setActiveVault(vault.id);
     await this.startWatching(kdbxPath);
-    this.log(`Tracking ${name}. Its current contents are the first revision.`);
+    this.log(
+      replacing
+        ? `Now tracking ${name}. Your other devices stay on the previous file until they switch too.`
+        : `Tracking ${name}. Its current contents are the first revision.`
+    );
+    this.deps.onSnapshotChanged();
+  }
+
+  /**
+   * Track nothing, keeping the history and leaving the file alone.
+   *
+   * This is how both devices move onto a different file. A device holding no
+   * vault adopts whatever its peer advertises — the same path a freshly paired
+   * device takes — so stopping here and syncing is what pulls the other
+   * device's file across.
+   */
+  public async stopTrackingVault(): Promise<void> {
+    await this.watcher?.stop();
+    this.watcher = undefined;
+    this.clearHeldBackUpdate();
+    this.setActiveVault(undefined);
+    this.log(
+      "Stopped tracking that file. Its history is kept, and syncing will now offer whatever your other device has."
+    );
     this.deps.onSnapshotChanged();
   }
 
@@ -340,7 +471,9 @@ export class DesktopServices {
       const bytes = await this.engine.bytesOf(brand<string, "RevisionId">(revisionId));
       const outcome = await writeVaultFileAtomic({ vaultPath: vault.kdbxPath, bytes, ignoreLock });
       if (outcome.kind === "refused-locked") {
-        this.log("Refused to write: KeePassXC still has the vault open.");
+        this.log(
+          "Did not write the file — KeePassXC still has it open, and would save its own copy back over it. Close it and try again."
+        );
         return outcome;
       }
       this.log(`Wrote revision ${short(revisionId)} to ${vault.kdbxPath}.`);
@@ -824,22 +957,34 @@ export class DesktopServices {
           if (event.kind === "authenticated") {
             this.log(`Authenticated ${short(event.remoteDeviceId)}.`);
             // Only now do we know which device the current room leads to, so
-            // this is the first moment the rendezvous can be recorded.
+            // this is the first moment the rendezvous can be recorded — and the
+            // first moment the live channel can be attributed to a device.
             if (this.pendingRendezvous !== undefined) {
               this.rememberRendezvous(event.remoteDeviceId, this.pendingRendezvous);
             }
+            if (this.livePeers.has(peerId)) {
+              this.livePeers.set(peerId, event.remoteDeviceId);
+              this.deps.onSnapshotChanged();
+            }
           }
           if (event.kind === "adopted-vault") {
-            this.vaultId = event.vaultId;
+            this.setActiveVault(event.vaultId);
             this.log(`Joined "${event.name}" from the paired device.`);
           }
         }
       }).run();
 
       const vaultId = result.vaultId;
-      this.vaultId = vaultId;
+      this.setActiveVault(vaultId);
 
-      this.log(describeSync(result.remoteDevice.name, result.received.length, result.sent.length));
+      this.log(
+        describeSync(
+          result.remoteDevice.name,
+          result.received.length,
+          result.sent.length,
+          result.missing.length
+        )
+      );
 
       let conflictId: string | undefined;
       // A peer with nothing to offer reports no head. Both branches below need
@@ -866,7 +1011,10 @@ export class DesktopServices {
         ...(conflictId === undefined ? {} : { conflictId })
       };
     } catch (error) {
-      const explained = explainFailure(messageOf(error));
+      const explained = explainFailure(
+        messageOf(error),
+        error instanceof SessionError ? error.code : undefined
+      );
       this.log(explained);
       this.deps.onSnapshotChanged();
       return { kind: "failed", reason: explained };
@@ -907,7 +1055,9 @@ export class DesktopServices {
       at: systemClock.now()
     });
     await this.store.metadata.saveConflict(conflict);
-    this.log("Both devices changed the vault. Choose how to resolve it.");
+    this.log(
+      "Both devices changed the file while they were apart. Nothing is lost — combine them on the Home tab to keep every change."
+    );
     return conflict.id;
   }
 
@@ -1016,12 +1166,14 @@ export class DesktopServices {
       ).map((row) => row.device_id)
     );
 
+    const online = this.onlineDeviceIds();
     const paired = (await this.trust.list()).map((entry) => ({
       deviceId: entry.deviceId,
       name: entry.name,
       trust: entry.trust,
       pairedAt: entry.pairedAt.toISOString(),
       canReconnect: knownRendezvous.has(entry.deviceId),
+      online: online.has(String(entry.deviceId)),
       ...(entry.lastSeenAt === undefined ? {} : { lastSeenAt: entry.lastSeenAt.toISOString() })
     }));
 
@@ -1198,9 +1350,23 @@ function mergeBasesOf(
   return divergence.kind === "diverged" ? divergence.mergeBases : [];
 }
 
-function describeSync(peerName: string, received: number, sent: number): string {
+/**
+ * What the sync actually did.
+ *
+ * `missing` was previously dropped: a session that asked for changes and never
+ * received them reported success, so a partial sync and a complete one read
+ * identically and there was nothing to notice.
+ */
+function describeSync(peerName: string, received: number, sent: number, missing: number): string {
+  const shortfall =
+    missing === 0
+      ? ""
+      : ` ${missing} change${missing === 1 ? "" : "s"} did not arrive; they will be fetched again next time.`;
+
   if (received === 0 && sent === 0) {
-    return `Checked with ${peerName} — already in step.`;
+    return missing === 0
+      ? `Checked with ${peerName} — already in step.`
+      : `Checked with ${peerName}.${shortfall}`;
   }
   const parts: string[] = [];
   if (received > 0) {
@@ -1209,7 +1375,7 @@ function describeSync(peerName: string, received: number, sent: number): string 
   if (sent > 0) {
     parts.push(`sent ${sent}`);
   }
-  return `Synced with ${peerName} — ${parts.join(" and ")}.`;
+  return `Synced with ${peerName} — ${parts.join(" and ")}.${shortfall}`;
 }
 
 function short(value: string): string {
@@ -1223,59 +1389,103 @@ function messageOf(error: unknown): string {
 export type { ConflictId };
 
 /**
- * Say what went wrong in terms of what someone did.
+ * Say what went wrong in terms of what someone did, and to whom.
  *
- * The protocol's own words leak into the interface otherwise, and two of them
- * mislead badly. "Revoked" is the internal name for a state the interface calls
- * *disconnected*, so a yellow bar reading "device has been revoked" describes
- * something far more final than pressing Disconnect. Worse, the same words
- * appear on both devices, so neither one learns which of them did it.
+ * The protocol's own words leak into the interface otherwise, and they mislead
+ * in two distinct ways. "Revoked" is the internal name for a state the interface
+ * calls *disconnected*, so a bar reading "device has been revoked" describes
+ * something far more final than pressing Disconnect. And a failure has two ends:
+ * the same sentence shown on both devices tells neither person which of them has
+ * to do anything about it.
  *
- * The prefix is what tells them apart. `peer rejected:` is this device turning
- * the other away; `peer reported:` is the other device turning this one away.
+ * `peer rejected:` is this device turning the other away; `peer reported:` is
+ * the other device turning this one away. Every message below is written for the
+ * person reading that particular screen, and says what to do *there*.
+ *
+ * `code` comes from the SessionError when there is one. It is what makes the
+ * categories at the bottom reliable — the reasons behind them are free text
+ * written for a developer, and matching on their wording would be guesswork.
  */
-export function explainFailure(reason: string): string {
-  const weRejected = reason.includes("peer rejected:");
-  const theyRejected = reason.includes("peer reported:");
+export function explainFailure(reason: string, code?: string): string {
+  const weRefused = reason.includes("peer rejected:");
 
-  if (reason.includes("device has been revoked")) {
-    return weRejected
-      ? "You disconnected that device here, so it was turned away. Reconnect it under Devices to sync again."
-      : "The other device has this one disconnected. Reconnect it there to sync again.";
+  // ---- the two devices are not talking about the same file ---------------
+
+  // Both ends detect this themselves, so both see it at once — and naming the
+  // two files is what stops the advice being "you go first, no you go first".
+  const files = /This device tracks "([^"]*)" and the peer tracks "([^"]*)"/u.exec(reason);
+  if (files !== null) {
+    return (
+      `This device is syncing ${files[1]} and the other one is syncing ${files[2]}. ` +
+      "They are separate files with no history in common, so there is nothing to combine. " +
+      "Keep whichever you want: on the device holding the other one, press “Stop tracking it”, then sync again."
+    );
   }
 
-  if (reason.includes("device is not paired with this one")) {
-    return weRejected
-      ? "That device is not set up here. Connect it again under Devices."
-      : "The other device does not have this one set up. Connect them again.";
-  }
-
-  if (reason.includes("device key has changed since pairing")) {
-    // Either a reinstall or an impersonation attempt; both need a deliberate
-    // re-pairing, and neither should be described as a network problem.
-    return theyRejected
-      ? "The other device no longer recognises this one's key. Connect them again, comparing the six digits."
-      : "That device's key has changed since you connected it. Connect it again, comparing the six digits.";
-  }
-
-  if (reason.includes("the pairing numbers were not confirmed")) {
-    return "The numbers were not confirmed, so nothing was shared.";
-  }
-
-  // Two paired devices that have not chosen a vault yet are in a normal state,
+  // Two paired devices that have not chosen a file yet are in a normal state,
   // not a broken one. Calling it a failure sent people hunting for a bug that
   // was not there.
   if (reason.includes("neither device is tracking a vault")) {
-    return "Connected, but no password file has been shared yet. Set one up on either device.";
+    return "Connected, but neither device has a password file yet. Set one up on either device and it will reach the other by itself.";
   }
 
-  if (reason.includes("timed out waiting for")) {
-    return "The other device stopped responding. It will try again on its own when both are online.";
+  if (reason.includes("does not track that vault")) {
+    return "This device lost track of the file it was syncing. Pick it again under “The file on this device”.";
   }
 
-  if (reason.includes("A sync with that device is already running")) {
-    return "Already syncing with that device.";
+  // ---- trust: someone was turned away ------------------------------------
+
+  if (reason.includes("device has been revoked")) {
+    return weRefused
+      ? "You disconnected that device on this one, so it was turned away. Press Reconnect under Devices to start syncing again."
+      : "The other device has this one disconnected. Press Reconnect there — nothing needs doing on this device.";
   }
 
-  return `Sync failed: ${reason}`;
+  if (reason.includes("device is not paired with this one")) {
+    return weRefused
+      ? "That device is not set up on this one, so it was turned away. Connect them again under Devices."
+      : "The other device does not have this one set up. Connect them again, starting from that device.";
+  }
+
+  if (reason.includes("device key has changed since pairing")) {
+    // A reinstall or an impersonation attempt. Both need a deliberate
+    // re-pairing, and neither should read as a network problem.
+    return weRefused
+      ? "That device is not using the key you verified. Reinstalling PassVault does this — so does someone pretending to be it. Press Forget under Devices, then connect it again and compare the six digits."
+      : "The other device no longer recognises this one's key. Press Forget for this device there, then connect the two again and compare the six digits.";
+  }
+
+  if (reason.includes("the pairing numbers were not confirmed")) {
+    return weRefused
+      ? "The numbers were not confirmed here, so nothing was shared and nothing was saved. Start again if that was not what you meant."
+      : "The other device did not confirm the numbers, so nothing was shared. Check the same six digits are showing on both screens, then try again.";
+  }
+
+  if (reason.includes("device id does not match") || reason.includes("signature did not verify")) {
+    return weRefused
+      ? "The other device could not prove it is the one you connected, so nothing was shared. If it keeps happening, press Forget under Devices and connect it again."
+      : "This device could not prove its identity to the other one. Connect the two again, comparing the six digits.";
+  }
+
+  // ---- both ends running, but not the same build --------------------------
+
+  if (code === "unsupported-version" || reason.includes("speaks protocol")) {
+    return "The two devices are running versions of PassVault that cannot talk to each other. Update both to the same version.";
+  }
+
+  if (code === "malformed-message" || code === "limit-exceeded") {
+    return "The other device sent something this one could not read, so the sync was stopped and nothing was changed. This usually means the two are on different versions of PassVault.";
+  }
+
+  // ---- ordinary interruptions ---------------------------------------------
+
+  if (code === "timeout" || reason.includes("timed out waiting for")) {
+    return "The other device stopped responding partway through. Nothing was lost — your changes are still here, and will go across next time you are both online.";
+  }
+
+  if (code === "closed" || reason.includes("closed the control channel")) {
+    return "The other device disconnected before the sync finished. Nothing was lost — press “Sync now” under Devices once it is back.";
+  }
+
+  return `Sync could not finish: ${reason}`;
 }
