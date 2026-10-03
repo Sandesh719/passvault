@@ -13,7 +13,7 @@ import { normalizeServerHost } from "@passvault/core";
 // The same file electron-builder turns into the macOS and Windows icons, so
 // the mark in the window can never drift from the one on the dock.
 import logoUrl from "../../build/icon.png";
-import { PeerBridge } from "./peerBridge.js";
+import { PeerBridge } from "@passvault/transport";
 import {
   Body,
   Button,

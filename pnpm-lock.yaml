@@ -296,6 +296,9 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      '@passvault/signaling':
+        specifier: workspace:*
+        version: link:../../apps/signaling
       typescript:
         specifier: ^5.7.2
         version: 5.9.3

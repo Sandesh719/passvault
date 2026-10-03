@@ -1,4 +1,4 @@
-import type { DesktopApi, PeerFrame } from "../shared/api.js";
+import type { PeerFrame, PeerTransportHost } from "./peerFrame.js";
 
 const CONTROL = "passvault/control";
 const BULK = "passvault/bulk";
@@ -84,7 +84,7 @@ export class PeerBridge {
   private iceServers: readonly RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
   public constructor(
-    private readonly api: DesktopApi,
+    private readonly api: PeerTransportHost,
     private readonly events: BridgeEvents,
     iceServers?: readonly RTCIceServer[]
   ) {

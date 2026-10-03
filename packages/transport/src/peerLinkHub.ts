@@ -1,5 +1,5 @@
 import { brand, type Channel, type PeerLink } from "@passvault/core";
-import type { ChannelName, PeerFrame } from "../shared/api.js";
+import type { ChannelName, PeerFrame } from "./peerFrame.js";
 
 const LOW_WATER_BYTES = 256 * 1024;
 
@@ -17,7 +17,7 @@ const LOW_WATER_BYTES = 256 * 1024;
  * `bufferedAmount`, so the session is throttled by the actual network queue and
  * not by how fast IPC happens to be.
  */
-class IpcChannel<T extends string | Uint8Array> implements Channel<T> {
+class HubChannel<T extends string | Uint8Array> implements Channel<T> {
   private handler: ((data: T) => void) | undefined;
   private closeHandler: (() => void) | undefined;
   private buffered = 0;
@@ -95,8 +95,8 @@ class IpcChannel<T extends string | Uint8Array> implements Channel<T> {
 
 interface LinkRecord {
   readonly link: PeerLink;
-  readonly control: IpcChannel<string>;
-  readonly bulk: IpcChannel<Uint8Array>;
+  readonly control: HubChannel<string>;
+  readonly bulk: HubChannel<Uint8Array>;
 }
 
 /**
@@ -116,7 +116,7 @@ function opensASession(frame: PeerFrame): boolean {
   }
 }
 
-export class IpcPeerLinkHub {
+export class PeerLinkHub {
   private readonly links = new Map<string, LinkRecord>();
   /**
    * Frames that arrived for a peer with no session running.
@@ -148,8 +148,8 @@ export class IpcPeerLinkHub {
     this.waiting.delete(peerId);
     this.closeLink(peerId);
 
-    const control = new IpcChannel<string>(peerId, "control", this.emit);
-    const bulk = new IpcChannel<Uint8Array>(peerId, "bulk", this.emit);
+    const control = new HubChannel<string>(peerId, "control", this.emit);
+    const bulk = new HubChannel<Uint8Array>(peerId, "bulk", this.emit);
     const link: PeerLink = {
       remotePeerId: brand<string, "PeerId">(peerId),
       control,
@@ -184,7 +184,7 @@ export class IpcPeerLinkHub {
         return;
       }
       const held = this.waiting.get(frame.peerId) ?? [];
-      if (held.length < IpcPeerLinkHub.MAX_WAITING) {
+      if (held.length < PeerLinkHub.MAX_WAITING) {
         held.push(frame);
         this.waiting.set(frame.peerId, held);
       }

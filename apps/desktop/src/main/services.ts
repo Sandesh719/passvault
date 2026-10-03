@@ -36,6 +36,7 @@ import {
   type LocalStore
 } from "@passvault/storage-node";
 import { SessionError, SyncEngine, SyncSession } from "@passvault/sync";
+import { PeerLinkHub, type PeerFrame } from "@passvault/transport";
 import type {
   AcceptedPairing,
   AppSnapshot,
@@ -45,7 +46,6 @@ import type {
   SyncOutcome,
   WriteBackOutcome
 } from "../shared/api.js";
-import { IpcPeerLinkHub } from "./ipcPeerLink.js";
 import { loadOrCreateIdentity, type LoadedIdentity } from "./identityStore.js";
 import { SettingsStore, createSqliteTrustStore, type ConnectionSettings } from "@passvault/storage-sql";
 
@@ -75,7 +75,7 @@ export interface ServicesDeps {
    * pointed at a server they both reach, and that is theirs to choose.
    */
   readonly defaultServerHost: string;
-  readonly emitPeerFrame: (frame: import("../shared/api.js").PeerFrame) => void;
+  readonly emitPeerFrame: (frame: PeerFrame) => void;
   readonly onSnapshotChanged: () => void;
   /** Ask the window to sync now, because this device just changed. */
   readonly onSyncSuggested: () => void;
@@ -126,11 +126,11 @@ export class DesktopServices {
       }
     | undefined;
   private unlockTimer: NodeJS.Timeout | undefined;
-  public readonly peers: IpcPeerLinkHub;
+  public readonly peers: PeerLinkHub;
   private settings!: SettingsStore;
 
   public constructor(private readonly deps: ServicesDeps) {
-    this.peers = new IpcPeerLinkHub(deps.emitPeerFrame);
+    this.peers = new PeerLinkHub(deps.emitPeerFrame);
     // A sync has two halves and either device may start one. Without this the
     // initiator waits for a hello that the idle side never sends.
     this.peers.onPeerInitiated = (peerId) => {

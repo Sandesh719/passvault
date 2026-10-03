@@ -8,8 +8,6 @@
  * surface, and the preload script exposes only what is listed here.
  */
 
-export type ChannelName = "control" | "bulk";
-
 export interface DeviceSummary {
   readonly deviceId: string;
   readonly name: string;
@@ -153,8 +151,9 @@ export interface AcceptedPairing {
  * field.
  */
 import type { ConnectionSettings, IceServer } from "@passvault/core";
+import type { ChannelName, PeerFrame } from "@passvault/transport";
 
-export type { ConnectionSettings, IceServer };
+export type { ConnectionSettings, IceServer, ChannelName, PeerFrame };
 
 export type SyncOutcome =
   | {
@@ -175,14 +174,6 @@ export type MergeOutcomeSummary =
   | { readonly kind: "merged"; readonly revisionId: string }
   | { readonly kind: "needs-credentials"; readonly reason: string }
   | { readonly kind: "failed"; readonly reason: string };
-
-export interface PeerFrame {
-  readonly peerId: string;
-  readonly channel: ChannelName;
-  /** Control frames are JSON text; bulk frames are raw bytes. */
-  readonly text?: string;
-  readonly bytes?: Uint8Array;
-}
 
 export interface DesktopApi {
   getSnapshot(): Promise<AppSnapshot>;
