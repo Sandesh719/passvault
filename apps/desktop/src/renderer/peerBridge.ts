@@ -37,6 +37,16 @@ function serverName(signalUrl: string): string {
  * the outbound queue is, so the session throttles on the real network rather
  * than on IPC.
  */
+export interface Rendezvous {
+  readonly signalUrl: string;
+  readonly roomId: string;
+  readonly inviteToken: string;
+}
+
+/** First wait after a drop. Doubles each failure, so the server is not hammered. */
+const FIRST_RETRY_MS = 1_000;
+const MAX_RETRY_MS = 30_000;
+
 export class PeerBridge {
   private socket: WebSocket | undefined;
   private readonly connections = new Map<string, RTCPeerConnection>();
@@ -47,6 +57,22 @@ export class PeerBridge {
   private localPeerId = crypto.randomUUID();
   /** Distinguishes a hangup we caused from one we suffered. */
   private closingDeliberately = false;
+  /**
+   * The room this device wants to be sitting in.
+   *
+   * Kept rather than used once: a socket that drops has to be replaced, and
+   * without this there was nothing to rebuild it from. A laptop waking, a
+   * server restarting, or a phone moving from wi-fi to mobile data each ended
+   * the socket, and the device then sat out of the room until the app was
+   * restarted — looking, from the other end, exactly like a device that had
+   * been turned off.
+   */
+  private room: Rendezvous | undefined;
+  private retryDelayMs = 0;
+  private retryTimer: ReturnType<typeof setTimeout> | undefined;
+  /** An outage is worth one notice, not one per attempt. */
+  private outageReported = false;
+  private wakeHooked = false;
 
   /**
    * STUN alone, until settings say otherwise.
@@ -74,23 +100,46 @@ export class PeerBridge {
     }
   }
 
-  public connect(input: { signalUrl: string; roomId: string; inviteToken: string }): void {
+  public connect(input: Rendezvous): void {
     this.disconnect();
+    this.room = input;
+    this.retryDelayMs = 0;
+    this.outageReported = false;
     this.closingDeliberately = false;
     this.detachOutbound = this.api.onPeerOutbound((frame) => this.forwardOutbound(frame));
+    this.hookWakeEvents();
+    this.openSocket();
+  }
 
-    const server = serverName(input.signalUrl);
-    this.events.onStatus("Connecting…");
-    const socket = new WebSocket(input.signalUrl);
+  private openSocket(): void {
+    const room = this.room;
+    if (room === undefined) {
+      return;
+    }
+    const server = serverName(room.signalUrl);
+    this.events.onStatus(this.retryDelayMs === 0 ? "Connecting…" : "Reconnecting…");
+
+    let socket: WebSocket;
+    try {
+      socket = new WebSocket(room.signalUrl);
+    } catch {
+      // A malformed address throws here rather than failing asynchronously.
+      this.scheduleRetry(server);
+      return;
+    }
     this.socket = socket;
 
     socket.addEventListener("open", () => {
+      // Only a connection that actually opened clears the backoff; resetting on
+      // the attempt would turn a flapping server into a tight loop.
+      this.retryDelayMs = 0;
+      this.outageReported = false;
       this.events.onStatus("Finding your other device…");
       socket.send(
         JSON.stringify({
           type: "join",
-          roomId: input.roomId,
-          inviteToken: input.inviteToken,
+          roomId: room.roomId,
+          inviteToken: room.inviteToken,
           peerId: this.localPeerId
         })
       );
@@ -100,34 +149,98 @@ export class PeerBridge {
       void this.handleSignal(JSON.parse(String(event.data)) as SignalMessage);
     });
 
-    socket.addEventListener("error", () => {
-      this.events.onStatus("Can't reach the server");
-      // The address is the thing to check, and it is the thing someone can
-      // actually change — so name it, and say where.
-      this.events.onNotice(
-        `Could not reach ${server}. Check that both devices are online and that the address under Devices → Connection server is right.`
-      );
-    });
-
+    // `error` is always followed by `close`, so retrying is driven from one
+    // place; handling both reported every outage twice.
     socket.addEventListener("close", (event) => {
-      if (this.closingDeliberately) {
+      if (this.closingDeliberately || this.socket !== socket) {
         return;
       }
-      const detail = (event as CloseEvent).reason;
-      // A close with no reason and no prior handshake almost always means the
-      // server was never reachable, which is a different problem from a peer
-      // dropping mid-session — say which.
-      this.events.onStatus("Not connected");
-      this.events.onNotice(
-        detail.length > 0
-          ? `${server} closed the connection: ${detail}`
-          : `Lost the connection to ${server} before your other device appeared. Press “Sync now” on the Devices tab to try again.`
-      );
+      this.socket = undefined;
+      this.scheduleRetry(server, (event as CloseEvent).reason);
     });
+  }
+
+  /**
+   * Try again later, backing off.
+   *
+   * Deliberately quiet while a peer is still connected: the signaling server
+   * introduces two devices and is not needed again afterwards, so a socket
+   * dropping mid-session changes nothing the person can see, and saying
+   * "disconnected" over a sync that is working would be a lie.
+   */
+  private scheduleRetry(server: string, detail = ""): void {
+    if (this.room === undefined || this.retryTimer !== undefined) {
+      return;
+    }
+    const stillSyncing = this.ready.size > 0;
+
+    this.retryDelayMs =
+      this.retryDelayMs === 0 ? FIRST_RETRY_MS : Math.min(this.retryDelayMs * 2, MAX_RETRY_MS);
+    // Jitter, so two devices dropped by the same outage do not march back in
+    // lockstep and collide on every attempt.
+    const wait = this.retryDelayMs * (0.5 + Math.random() * 0.5);
+
+    if (!stillSyncing) {
+      this.events.onStatus("Reconnecting…");
+      if (!this.outageReported) {
+        this.outageReported = true;
+        this.events.onNotice(
+          detail.length > 0
+            ? `${server} closed the connection: ${detail}. Trying again automatically.`
+            : `Lost the connection to ${server}. Trying again automatically — check that this device is online, and that the address under Devices → Connection server is right.`
+        );
+      }
+    }
+
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = undefined;
+      this.openSocket();
+    }, wait);
+  }
+
+  /**
+   * Come back immediately when the device plainly just woke up.
+   *
+   * Waiting out a thirty-second backoff that began while the laptop was asleep
+   * or the phone was in someone's pocket is the difference between sync that
+   * feels instant and sync that feels broken.
+   */
+  private readonly wake = (): void => {
+    if (this.room === undefined || this.socket !== undefined) {
+      return;
+    }
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      return;
+    }
+    if (this.retryTimer !== undefined) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = undefined;
+    }
+    this.retryDelayMs = 0;
+    this.openSocket();
+  };
+
+  private hookWakeEvents(): void {
+    if (this.wakeHooked || typeof window === "undefined") {
+      return;
+    }
+    this.wakeHooked = true;
+    window.addEventListener("online", this.wake);
+    document.addEventListener("visibilitychange", this.wake);
   }
 
   public disconnect(): void {
     this.closingDeliberately = true;
+    this.room = undefined;
+    if (this.retryTimer !== undefined) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = undefined;
+    }
+    if (this.wakeHooked && typeof window !== "undefined") {
+      this.wakeHooked = false;
+      window.removeEventListener("online", this.wake);
+      document.removeEventListener("visibilitychange", this.wake);
+    }
     this.detachOutbound?.();
     this.detachOutbound = undefined;
     for (const peerId of [...this.connections.keys()]) {
@@ -156,7 +269,15 @@ export class PeerBridge {
       return;
     }
     if (message.type === "peer-left") {
-      this.teardown(message.peerId);
+      // Leaving the signaling room is not the same as the connection dropping.
+      // WebRTC outlives the socket that introduced it — that is the whole point
+      // of it being peer to peer — so a peer whose signaling blipped used to
+      // have a perfectly good data channel torn down underneath it, making
+      // every sync exactly as fragile as the server it was trying not to need.
+      // The data channel closing is the only authority on whether it is gone.
+      if (!this.ready.has(message.peerId)) {
+        this.teardown(message.peerId);
+      }
       return;
     }
     if (message.type === "signal") {
@@ -185,7 +306,8 @@ export class PeerBridge {
       }
     });
     connection.addEventListener("connectionstatechange", () => {
-      if (connection.connectionState === "failed") {
+      const state = connection.connectionState;
+      if (state === "failed") {
         this.events.onStatus("Couldn't connect");
         // Both devices reached the server, so this is the network between them
         // — nothing about the address or the code is wrong, and saying "check
@@ -193,6 +315,11 @@ export class PeerBridge {
         this.events.onNotice(
           "Both devices found each other, but no direct connection could be made — some networks, mobile ones especially, block that. Add a relay under Devices → Connection server to get past it."
         );
+      }
+      // Clear it out either way, so the next `peer-joined` builds a fresh
+      // connection instead of returning early on a dead one.
+      if (state === "failed" || state === "closed") {
+        this.teardown(peerId);
       }
     });
     connection.addEventListener("datachannel", (event) => this.attach(peerId, event.channel));
@@ -294,14 +421,33 @@ export class PeerBridge {
     this.socket?.send(JSON.stringify({ type: "signal", targetPeerId, payload }));
   }
 
+  /**
+   * Forget a peer, once.
+   *
+   * Re-entrant by nature: closing a channel fires that channel's own close
+   * event, which lands back here, and a connection going to "failed" closes
+   * its channels, which do the same. Everything is removed from the maps
+   * *before* anything is closed, so the nested call finds nothing and returns
+   * — otherwise the peer is reported closed two or three times over, and with
+   * a synchronous channel implementation it does not terminate at all.
+   */
   private teardown(peerId: string): void {
+    const control = this.control.get(peerId);
+    const bulk = this.bulk.get(peerId);
+    const connection = this.connections.get(peerId);
+    if (control === undefined && bulk === undefined && connection === undefined) {
+      return;
+    }
+
     this.ready.delete(peerId);
-    this.control.get(peerId)?.close();
-    this.bulk.get(peerId)?.close();
     this.control.delete(peerId);
     this.bulk.delete(peerId);
-    this.connections.get(peerId)?.close();
     this.connections.delete(peerId);
+
+    control?.close();
+    bulk?.close();
+    connection?.close();
+
     this.api.peerClosed(peerId);
     this.events.onClosed(peerId);
   }

@@ -20,6 +20,8 @@ interface Recorded {
 
 const peers: Recorded[] = [];
 
+const channels: FakeDataChannel[] = [];
+
 class FakeDataChannel extends EventTarget {
   public readyState = "connecting";
   public bufferedAmount = 0;
@@ -27,10 +29,17 @@ class FakeDataChannel extends EventTarget {
   public bufferedAmountLowThreshold = 0;
   public constructor(public readonly label: string) {
     super();
+    channels.push(this);
   }
   public send(): void {}
+  /** Let a test take the channel live, which is what makes a peer "ready". */
+  public open(): void {
+    this.readyState = "open";
+    this.dispatchEvent(new Event("open"));
+  }
   public close(): void {
     this.readyState = "closed";
+    this.dispatchEvent(new Event("close"));
   }
 }
 
@@ -90,6 +99,7 @@ function stubApi(): DesktopApi {
     runSession: vi.fn(),
     peerInbound: (_frame: PeerFrame) => {},
     peerBuffered: () => {},
+    peerOpen: () => {},
     peerClosed: () => {},
     onPeerOutbound: () => noop,
     previewMerge: vi.fn(),
@@ -103,6 +113,7 @@ const bridges: PeerBridge[] = [];
 
 beforeEach(async () => {
   peers.length = 0;
+  channels.length = 0;
   server = await startSignalingServer(0);
   (globalThis as { RTCPeerConnection?: unknown }).RTCPeerConnection = FakeRTCPeerConnection;
 });
@@ -216,6 +227,56 @@ describe("PeerBridge against a real signaling server", () => {
     expect(notices.join(" ")).not.toMatch(/pnpm/u);
     expect(notices.join(" ")).toMatch(/127\.0\.0\.1:1/u);
     expect(notices.join(" ")).toMatch(/Connection server/u);
+  }, 30_000);
+
+  it("rejoins the room by itself after the server goes away and comes back", async () => {
+    // The failure this exists for: the socket was created once and never
+    // replaced, so a server restart — or a laptop sleeping, or a phone changing
+    // network — left the device silently outside the room until it was
+    // relaunched. The other device saw that as "simply not there".
+    const port = server.port;
+    const room = await createRoom();
+    const statuses: string[] = [];
+    makeBridge(statuses).connect(room);
+    await waitFor(() => statuses.includes("Waiting for your other device"), "the first join");
+
+    await server.close();
+    await waitFor(() => statuses.includes("Reconnecting…"), "the drop to be noticed");
+
+    // Same port, so the device's stored rendezvous still points at it.
+    server = await startSignalingServer(port);
+    await waitFor(
+      () => statuses.lastIndexOf("Waiting for your other device") > statuses.indexOf("Reconnecting…"),
+      "the rejoin",
+      20_000
+    );
+  }, 40_000);
+
+  it("keeps a working peer connection when signaling says the peer left", async () => {
+    const room = await createRoom();
+    const hostStatuses: string[] = [];
+    const guestStatuses: string[] = [];
+
+    const host = makeBridge(hostStatuses);
+    host.connect(room);
+    await waitFor(() => hostStatuses.includes("Waiting for your other device"), "the host to join");
+
+    // The second to arrive creates the channels, so it is the side that can
+    // reach "ready" against the stubbed WebRTC.
+    makeBridge(guestStatuses).connect(room);
+    await waitFor(() => channels.length >= 2, "the guest to create its channels");
+    for (const channel of channels) {
+      channel.open();
+    }
+    await waitFor(() => guestStatuses.includes("PEER-READY"), "the guest to become ready");
+
+    // Now the host leaves the room. Its data channel to the guest is still
+    // open, and WebRTC needs no server once two devices have been introduced,
+    // so tearing the connection down here would make every sync exactly as
+    // fragile as the socket it was trying not to depend on.
+    host.disconnect();
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(guestStatuses).not.toContain("PEER-CLOSED");
   }, 30_000);
 
   it("stays quiet when the disconnect was our own doing", async () => {
