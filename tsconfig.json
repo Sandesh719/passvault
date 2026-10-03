@@ -23,6 +23,9 @@
       "path": "packages/storage-node"
     },
     {
+      "path": "packages/services"
+    },
+    {
       "path": "apps/signaling"
     },
     {

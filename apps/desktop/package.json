@@ -20,6 +20,7 @@
     "@passvault/core": "workspace:*",
     "@passvault/identity": "workspace:*",
     "@passvault/kdbx": "workspace:*",
+    "@passvault/services": "workspace:*",
     "@passvault/storage-node": "workspace:*",
     "@passvault/storage-sql": "workspace:*",
     "@passvault/sync": "workspace:*",

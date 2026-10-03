@@ -78,6 +78,9 @@ importers:
       '@passvault/kdbx':
         specifier: workspace:*
         version: link:../../packages/kdbx
+      '@passvault/services':
+        specifier: workspace:*
+        version: link:../../packages/services
       '@passvault/storage-node':
         specifier: workspace:*
         version: link:../../packages/storage-node
@@ -210,6 +213,34 @@ importers:
       kdbxweb:
         specifier: ^2.1.1
         version: 2.1.1
+    devDependencies:
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)(lightningcss@1.32.0)
+
+  packages/services:
+    dependencies:
+      '@passvault/core':
+        specifier: workspace:*
+        version: link:../core
+      '@passvault/identity':
+        specifier: workspace:*
+        version: link:../identity
+      '@passvault/kdbx':
+        specifier: workspace:*
+        version: link:../kdbx
+      '@passvault/storage-sql':
+        specifier: workspace:*
+        version: link:../storage-sql
+      '@passvault/sync':
+        specifier: workspace:*
+        version: link:../sync
+      '@passvault/transport':
+        specifier: workspace:*
+        version: link:../transport
     devDependencies:
       typescript:
         specifier: ^5.7.2

@@ -100,6 +100,26 @@ describe("architectural boundaries", () => {
     expect(offenders, "the renderer must go through the preload bridge").toEqual([]);
   });
 
+  it("keeps the application layer free of platform dependencies", async () => {
+    const offenders: string[] = [];
+    for (const file of await sourceFiles(join(repoRoot, "packages", "services"))) {
+      const forbidden = (await importsIn(file)).filter(
+        (specifier) =>
+          specifier.startsWith("node:") ||
+          specifier === "electron" ||
+          specifier.includes("storage-node")
+      );
+      if (forbidden.length > 0) {
+        offenders.push(`${file.replace(repoRoot, "")} -> ${forbidden.join(", ")}`);
+      }
+    }
+    // Pairing, sessions, divergence, conflict handling and writing the current
+    // version back are the same work on a laptop and a phone. The only things
+    // that genuinely differ are behind `Platform`, and this is what keeps that
+    // list from quietly growing a filesystem back.
+    expect(offenders, "packages/services must reach the platform only through ports").toEqual([]);
+  });
+
   it("keeps the shared SQL stores free of platform dependencies", async () => {
     const offenders: string[] = [];
     for (const file of await sourceFiles(join(repoRoot, "packages", "storage-sql"))) {
