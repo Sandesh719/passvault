@@ -97,7 +97,19 @@ function tidyHost(raw: string): string {
   return normalizeServerHost(raw) ?? raw.trim();
 }
 
-function fileNameOf(path: string | undefined): string {
+/**
+ * What to call the vault file on screen.
+ *
+ * The vault's own name first: it is set from the file when it is picked, and
+ * on Android the location is a content URI that splits into nothing a person
+ * would recognise. The path is only a fallback for a vault recorded before
+ * names were kept.
+ */
+function fileNameOf(vault: { readonly name?: string; readonly kdbxPath?: string } | undefined): string {
+  if (vault?.name !== undefined && vault.name.length > 0) {
+    return vault.name;
+  }
+  const path = vault?.kdbxPath;
   return path === undefined ? "" : (path.split("/").pop() ?? path);
 }
 
@@ -377,7 +389,7 @@ export function App(): React.ReactElement {
             ) : null}
 
             {snapshot.vault?.kdbxPath !== undefined ? (
-              <VaultFileCard path={snapshot.vault.kdbxPath} />
+              <VaultFileCard name={fileNameOf(snapshot.vault)} path={snapshot.vault.kdbxPath} />
             ) : null}
 
             {snapshot.pairedDevices.length === 0 &&
@@ -989,11 +1001,14 @@ function DeviceRow(props: {
  * each spells out what the other device does afterwards, rather than leaving it
  * to be discovered as a failed sync.
  */
-function VaultFileCard(props: { readonly path: string }): React.ReactElement {
+function VaultFileCard(props: {
+  readonly name: string;
+  readonly path: string;
+}): React.ReactElement {
   const [confirming, setConfirming] = useState<"switch" | "stop" | undefined>(
     undefined,
   );
-  const name = fileNameOf(props.path);
+  const { name } = props;
 
   if (confirming === "switch") {
     return (
@@ -1133,7 +1148,7 @@ function StatusCard(props: {
         <Heading>Waiting for KeePassXC</Heading>
         <Body>
           There is a newer version ready, but KeePassXC currently has{" "}
-          <strong className="text-ink">{fileNameOf(vault?.kdbxPath)}</strong>{" "}
+          <strong className="text-ink">{fileNameOf(vault)}</strong>{" "}
           open. Close it and the file will update.
         </Body>
         <Button className="justify-self-start" onClick={props.onApplyPending}>
@@ -1159,7 +1174,7 @@ function StatusCard(props: {
     <HeroCard tone="good">
       <Heading>Everything is in sync</Heading>
       <Body>
-        <strong className="text-ink">{fileNameOf(vault?.kdbxPath)}</strong> is
+        <strong className="text-ink">{fileNameOf(vault)}</strong> is
         up to date
         {props.currentSavedAt === undefined
           ? ""

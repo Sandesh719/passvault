@@ -56,8 +56,6 @@ export interface VaultFileAccess {
     readonly onChange: (bytes: Uint8Array) => Promise<void>;
     readonly onError: (error: Error) => void;
   }): FileWatch;
-  /** What to call this file on screen; a content URI is not readable as a path. */
-  displayName(path: string): string;
 }
 
 export interface LoadedIdentity {

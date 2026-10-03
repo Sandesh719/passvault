@@ -28,8 +28,12 @@ frontend/.vite/
 frontend/.capacitor/
 frontend/android/
 frontend/ios/
-android/
-ios/
+# The Android project is source, not output: it carries the Gradle setup and
+# the native plugin that reaches the Storage Access Framework and the
+# keystore. A blanket android/ rule written before that project existed would
+# have silently dropped all of it — the same way build/ once swallowed the
+# mac entitlements file. Capacitor's own android/.gitignore excludes the
+# genuine build products, and .gradle/ and build/ below catch the rest.
 
 # Native/mobile IDE outputs
 *.iml

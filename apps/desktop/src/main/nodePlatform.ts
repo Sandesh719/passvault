@@ -6,7 +6,6 @@ import {
   readVaultFile,
   writeVaultFileAtomic
 } from "@passvault/storage-node";
-import { basename } from "node:path";
 import { loadOrCreateIdentity } from "./identityStore.js";
 
 /**
@@ -39,8 +38,7 @@ export function nodePlatform(appDataDir: string): Platform {
         });
         watcher.start();
         return { stop: () => watcher.stop() };
-      },
-      displayName: (path) => basename(path)
+      }
     }
   };
 }

@@ -257,7 +257,7 @@ export class VaultServices {
    * switches too, and the next session between them will say so rather than
    * merging two unrelated histories.
    */
-  public async bindVault(kdbxPath: string): Promise<void> {
+  public async bindVault(kdbxPath: string, displayName?: string): Promise<void> {
     const replacing = this.vaultId !== undefined;
 
     // Picking a file this device already knows means going back to it. Importing
@@ -277,9 +277,11 @@ export class VaultServices {
     }
 
     const bytes = await this.files.read(kdbxPath);
-    // Split on both separators: on Windows the POSIX-only form left the whole
-    // path as the vault's name.
-    const name = kdbxPath.split(/[/\\]/u).pop() ?? "vault.kdbx";
+    // The platform's name wins where it has one: an Android content URI is not
+    // a path, and splitting it yields a percent-encoded fragment rather than
+    // anything a person would recognise. Splitting on both separators matters
+    // on Windows, where the POSIX-only form left the whole path as the name.
+    const name = displayName ?? kdbxPath.split(/[/\\]/u).pop() ?? "vault.kdbx";
 
     const { vault } = await this.engine.importVault({ name, bytes, kdbxPath });
     this.setActiveVault(vault.id);
