@@ -145,24 +145,16 @@ export interface AcceptedPairing {
  * variable.
  */
 /**
- * An ICE server, spelled out here rather than borrowed from the DOM.
+ * Re-exported, not redeclared.
  *
- * The main process has no DOM types — and should not need them to describe a
- * value it only ever forwards. Structurally identical to `RTCIceServer`, so the
- * renderer hands it straight to WebRTC.
+ * Both of these describe how a device reaches other devices, which is not an
+ * IPC concern — a phone needs the same settings and has no IPC at all. Two
+ * structurally identical copies would have drifted the first time one grew a
+ * field.
  */
-export interface IceServer {
-  readonly urls: string;
-  readonly username?: string;
-  readonly credential?: string;
-}
+import type { ConnectionSettings, IceServer } from "@passvault/core";
 
-export interface ConnectionSettings {
-  readonly serverHost: string;
-  readonly turnUrl?: string;
-  readonly turnUsername?: string;
-  readonly turnCredential?: string;
-}
+export type { ConnectionSettings, IceServer };
 
 export type SyncOutcome =
   | {

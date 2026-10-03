@@ -1,6 +1,6 @@
 import { brand, type DeviceId } from "@passvault/core";
 import type { PairedDevice, TrustStore } from "@passvault/identity";
-import type { SqlDatabase } from "@passvault/storage-node";
+import type { SqlDatabase } from "@passvault/core";
 
 interface DeviceRow {
   readonly id: string;

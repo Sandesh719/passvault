@@ -1,5 +1,6 @@
 export * from "./assert.js";
 export * from "./conflicts.js";
+export * from "./connection.js";
 export * from "./dag.js";
 export * from "./framing.js";
 export * from "./hash.js";
@@ -10,5 +11,6 @@ export * from "./ports.js";
 export * from "./protocol.js";
 export * from "./revisions.js";
 export * from "./shortCode.js";
+export * from "./sql.js";
 export * from "./transfers.js";
 export * from "./types.js";

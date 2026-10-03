@@ -1,8 +1,9 @@
 import { asSha256Hex, type HashPort, type Sha256Hex } from "@passvault/core";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import { SqliteMetadataStore } from "@passvault/storage-sql";
 import { FileBlobStore } from "./blobStore.js";
-import { SqliteMetadataStore } from "./sqliteMetadataStore.js";
+import { openSqlite } from "./sqliteDriver.js";
 
 export const nodeHashPort: HashPort = {
   async sha256(bytes: Uint8Array): Promise<Sha256Hex> {
@@ -30,7 +31,7 @@ export async function openLocalStore(rootDir: string): Promise<LocalStore> {
   await blobs.init();
   // A crash mid-write leaves a .part file behind; nothing references it.
   await blobs.sweepTemp();
-  const metadata = new SqliteMetadataStore(join(rootDir, "metadata.db"));
+  const metadata = new SqliteMetadataStore(openSqlite(join(rootDir, "metadata.db")));
   return {
     blobs,
     metadata,

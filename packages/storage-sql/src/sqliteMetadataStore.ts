@@ -19,13 +19,11 @@ import {
   type TransferDirection,
   type TransferId,
   type TransferStatus,
+  type SqlDatabase,
   type Vault,
   type VaultId
 } from "@passvault/core";
-import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
 import { ANCESTORS_CTE, SCHEMA_SQL, SCHEMA_VERSION } from "./schema.js";
-import { openSqlite, type SqlDatabase } from "./sqliteDriver.js";
 
 interface VaultRow {
   readonly id: string;
@@ -110,9 +108,15 @@ export class SqliteMetadataStore implements MetadataStore {
   private queue: Promise<unknown> = Promise.resolve();
   private depth = 0;
 
-  public constructor(filePath: string) {
-    mkdirSync(dirname(filePath), { recursive: true });
-    this.db = openSqlite(filePath);
+  /**
+   * Takes an open database rather than a path.
+   *
+   * Opening one means knowing where files live and which SQLite binding to
+   * use, and neither is true of a WebView. Handing the connection in is what
+   * lets every line below this point be shared with Android unchanged.
+   */
+  public constructor(db: SqlDatabase) {
+    this.db = db;
     // Rollback-journal mode: the WASM VFS has no WAL. Still atomic and
     // crash-safe, just without overlapping readers and writers.
     this.db.exec("PRAGMA synchronous = FULL");

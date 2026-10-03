@@ -47,8 +47,7 @@ import type {
 } from "../shared/api.js";
 import { IpcPeerLinkHub } from "./ipcPeerLink.js";
 import { loadOrCreateIdentity, type LoadedIdentity } from "./identityStore.js";
-import { SettingsStore, type ConnectionSettings } from "./settings.js";
-import { createSqliteTrustStore } from "./sqliteTrustStore.js";
+import { SettingsStore, createSqliteTrustStore, type ConnectionSettings } from "@passvault/storage-sql";
 
 const MAX_ACTIVITY = 200;
 

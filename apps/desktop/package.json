@@ -21,6 +21,7 @@
     "@passvault/identity": "workspace:*",
     "@passvault/kdbx": "workspace:*",
     "@passvault/storage-node": "workspace:*",
+    "@passvault/storage-sql": "workspace:*",
     "@passvault/sync": "workspace:*",
     "@passvault/transport": "workspace:*",
     "chokidar": "^5.0.0",

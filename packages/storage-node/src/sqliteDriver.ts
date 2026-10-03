@@ -1,4 +1,7 @@
+import type { SqlDatabase, SqlStatement } from "@passvault/core";
+import { mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
+import { dirname } from "node:path";
 
 /**
  * node-sqlite3-wasm ships CommonJS. Bundlers cope with a named import, but
@@ -28,17 +31,9 @@ const { Database } = createRequire(import.meta.url)(
  * — that is SQLite's classic default — but readers and writers do not overlap.
  * For a single-process desktop agent, nothing here notices.
  */
-export interface SqlStatement {
-  get(...params: readonly unknown[]): unknown;
-  all(...params: readonly unknown[]): unknown[];
-  run(...params: readonly unknown[]): void;
-}
-
-export interface SqlDatabase {
-  prepare(sql: string): SqlStatement;
-  exec(sql: string): void;
-  close(): void;
-}
+// The interfaces themselves live in core, so the SQL written against them can
+// be shared with a platform that has no Node and no filesystem.
+export type { SqlDatabase, SqlStatement } from "@passvault/core";
 
 type BindValue = string | number | bigint | Uint8Array | null;
 
@@ -90,6 +85,10 @@ function toBindValue(value: unknown): BindValue {
 }
 
 export function openSqlite(filePath: string): SqlDatabase {
+  // Creating the directory belongs here rather than in the store: knowing that
+  // a database is a file in a directory is exactly the platform knowledge the
+  // store was freed of.
+  mkdirSync(dirname(filePath), { recursive: true });
   const db = new Database(filePath);
 
   // Foreign keys are off by default in SQLite and must be enabled per

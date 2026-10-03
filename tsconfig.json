@@ -17,6 +17,9 @@
       "path": "packages/transport"
     },
     {
+      "path": "packages/storage-sql"
+    },
+    {
       "path": "packages/storage-node"
     },
     {

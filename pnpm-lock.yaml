@@ -81,6 +81,9 @@ importers:
       '@passvault/storage-node':
         specifier: workspace:*
         version: link:../../packages/storage-node
+      '@passvault/storage-sql':
+        specifier: workspace:*
+        version: link:../../packages/storage-sql
       '@passvault/sync':
         specifier: workspace:*
         version: link:../../packages/sync
@@ -220,6 +223,9 @@ importers:
       '@passvault/core':
         specifier: workspace:*
         version: link:../core
+      '@passvault/storage-sql':
+        specifier: workspace:*
+        version: link:../storage-sql
       chokidar:
         specifier: ^5.0.0
         version: 5.0.0
@@ -230,6 +236,22 @@ importers:
       '@types/node':
         specifier: ^22.10.2
         version: 22.20.1
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.1)(lightningcss@1.32.0)
+
+  packages/storage-sql:
+    dependencies:
+      '@passvault/core':
+        specifier: workspace:*
+        version: link:../core
+      '@passvault/identity':
+        specifier: workspace:*
+        version: link:../identity
+    devDependencies:
       typescript:
         specifier: ^5.7.2
         version: 5.9.3

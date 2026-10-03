@@ -1,6 +1,10 @@
-import { isValidServerHost, normalizeServerHost } from "@passvault/core";
-import type { SqlDatabase } from "@passvault/storage-node";
-import type { ConnectionSettings, IceServer } from "../shared/api.js";
+import {
+  isValidServerHost,
+  normalizeServerHost,
+  type ConnectionSettings,
+  type IceServer,
+  type SqlDatabase
+} from "@passvault/core";
 
 /**
  * Where this device meets other devices.
@@ -11,9 +15,10 @@ import type { ConnectionSettings, IceServer } from "../shared/api.js";
  * shows it rather than hiding it, because a person pairing two devices needs to
  * be able to see that both are pointed at the same place.
  *
- * The shape lives in the IPC contract; the renderer edits exactly this.
+ * The shape lives in core, because a phone needs the same setting and has no
+ * IPC contract to put it in.
  */
-export type { ConnectionSettings } from "../shared/api.js";
+export type { ConnectionSettings } from "@passvault/core";
 
 const KEY = "connection";
 

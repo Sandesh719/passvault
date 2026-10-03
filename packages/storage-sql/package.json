@@ -1,5 +1,5 @@
 {
-  "name": "@passvault/storage-node",
+  "name": "@passvault/storage-sql",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -10,12 +10,9 @@
   },
   "dependencies": {
     "@passvault/core": "workspace:*",
-    "chokidar": "^5.0.0",
-    "node-sqlite3-wasm": "^0.8.60",
-    "@passvault/storage-sql": "workspace:*"
+    "@passvault/identity": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^22.10.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   }

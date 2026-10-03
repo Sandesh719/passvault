@@ -100,6 +100,22 @@ describe("architectural boundaries", () => {
     expect(offenders, "the renderer must go through the preload bridge").toEqual([]);
   });
 
+  it("keeps the shared SQL stores free of platform dependencies", async () => {
+    const offenders: string[] = [];
+    for (const file of await sourceFiles(join(repoRoot, "packages", "storage-sql"))) {
+      const forbidden = (await importsIn(file)).filter(
+        (specifier) => specifier.startsWith("node:") || specifier.includes("storage-node")
+      );
+      if (forbidden.length > 0) {
+        offenders.push(`${file.replace(repoRoot, "")} -> ${forbidden.join(", ")}`);
+      }
+    }
+    // Five hundred lines of SQL that say nothing about which platform runs
+    // them. That is only true while nothing here reaches for a filesystem: an
+    // Android WebView has none, and one `node:` import would end the sharing.
+    expect(offenders, "packages/storage-sql must run anywhere SQLite does").toEqual([]);
+  });
+
   it("keeps the sync engine free of platform dependencies", async () => {
     const offenders: string[] = [];
     for (const file of await sourceFiles(join(repoRoot, "packages", "sync"))) {
