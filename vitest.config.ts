@@ -18,6 +18,8 @@ export default defineConfig({
       "@passvault/sync": src("sync"),
       "@passvault/transport": src("transport"),
       "@passvault/storage-node": src("storage-node"),
+      "@passvault/storage-sql": src("storage-sql"),
+      "@passvault/services": src("services"),
       "@passvault/signaling": app("signaling"),
       // The main process reaches Electron for exactly one thing (safeStorage),
       // and that must not stop its logic being tested outside a window.

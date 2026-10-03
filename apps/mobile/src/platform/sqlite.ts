@@ -124,6 +124,11 @@ export async function openWebSqlite(files: SqliteHostFiles): Promise<PersistentS
     }
     dirty = false;
     const bytes = db.export();
+    // `export` finalises every prepared statement and reopens the database
+    // underneath us, so everything in the cache is now a dead handle. Reusing
+    // one throws "Statement closed" — which is what happened the first time a
+    // vault was imported on a device, one flush after start-up.
+    cache.clear();
     writing = writing.then(() => files.write(bytes));
     return writing;
   };
@@ -185,9 +190,9 @@ export async function openWebSqlite(files: SqliteHostFiles): Promise<PersistentS
       touched(sql);
     },
     close: () => {
-      for (const statement of cache.values()) {
-        statement.free();
-      }
+      // Not freed one by one: the flush below finalises them all, and freeing
+      // a statement that `export` already finalised is asking for the same
+      // "Statement closed" from the other direction.
       cache.clear();
       void flush().then(() => db.close());
     },

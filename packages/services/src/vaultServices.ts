@@ -26,7 +26,12 @@ import {
   toBase64,
   type TrustStore
 } from "@passvault/identity";
-import { KdbxInterpreter, uniformCredentials, type KdbxCredentialSet } from "@passvault/kdbx";
+import {
+  KdbxInterpreter,
+  looksLikeKdbx,
+  uniformCredentials,
+  type KdbxCredentialSet
+} from "@passvault/kdbx";
 import { SessionError, SyncEngine, SyncSession } from "@passvault/sync";
 import { PeerLinkHub, type PeerFrame } from "@passvault/transport";
 import type {
@@ -277,6 +282,15 @@ export class VaultServices {
     }
 
     const bytes = await this.files.read(kdbxPath);
+    // Checked here and nowhere else. Everything downstream treats a vault as
+    // opaque bytes by design, so the wrong file picked by mistake is accepted
+    // in silence and then synchronised to every other device — and the eight
+    // bytes it takes to notice cost nothing and decrypt nothing.
+    if (!looksLikeKdbx(bytes)) {
+      throw new Error(
+        `${displayName ?? "That file"} is not a KeePass database. Choose the .kdbx file KeePassXC opens.`
+      );
+    }
     // The platform's name wins where it has one: an Android content URI is not
     // a path, and splitting it yields a percent-encoded fragment rather than
     // anything a person would recognise. Splitting on both separators matters

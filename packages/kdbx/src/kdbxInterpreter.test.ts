@@ -4,7 +4,7 @@ import { brand, type RevisionId, type VaultId } from "@passvault/core";
 import { beforeAll, describe, expect, it } from "vitest";
 import { argon2Impl, registerArgon2 } from "./argon2.js";
 import { KdbxInterpreter } from "./kdbxInterpreter.js";
-import { uniformCredentials } from "./types.js";
+import { looksLikeKdbx, uniformCredentials } from "./types.js";
 
 const PASSWORD = "correct horse battery staple";
 const vaultId = brand<string, "VaultId">("vault-1") as VaultId;
@@ -180,4 +180,19 @@ describe("KdbxInterpreter", () => {
     expect(serialized).not.toContain("rotated-secret");
     expect(serialized).not.toContain("original-secret");
   }, 60_000);
+});
+
+describe("recognising a KeePass file", () => {
+  it("accepts a real database and rejects anything else", async () => {
+    registerArgon2();
+    const vault = await createVault();
+    expect(looksLikeKdbx(vault)).toBe(true);
+
+    // The mistake this exists for: a file picker tapped one row off. Nothing
+    // downstream can tell, because nothing downstream ever opens the file.
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+    expect(looksLikeKdbx(png)).toBe(false);
+    expect(looksLikeKdbx(new Uint8Array(0))).toBe(false);
+    expect(looksLikeKdbx(new Uint8Array([0x03, 0xd9, 0xa2, 0x9a]))).toBe(false);
+  });
 });

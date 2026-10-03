@@ -208,11 +208,17 @@ export function App(): React.ReactElement {
 
   const rejoined = useRef(false);
   useEffect(() => {
-    if (
-      rejoined.current ||
-      snapshot === undefined ||
-      snapshot.pairedDevices.length === 0
-    ) {
+    if (snapshot === undefined) {
+      return;
+    }
+    if (snapshot.pairedDevices.length === 0) {
+      // Nothing to connect to, so "Starting…" would sit there for ever and
+      // read as something still happening. It was the first thing visible on
+      // a fresh phone, which is the worst possible place for it.
+      setConnection((status) => (status === "Starting…" ? "No other devices" : status));
+      return;
+    }
+    if (rejoined.current) {
       return;
     }
     rejoined.current = true;
@@ -362,7 +368,16 @@ export function App(): React.ReactElement {
             <div className="grid gap-4">
             <StatusCard
               snapshot={snapshot}
-              onChooseVault={() => void api.chooseVault()}
+              onChooseVault={() => {
+                // Choosing a file can be refused — the commonest reason being
+                // a picker tapped one row off. Dropped on the floor, that
+                // looked exactly like the button not working.
+                void api
+                  .chooseVault()
+                  .catch((error: unknown) =>
+                    setNotice(readableError(error, "That file could not be used.")),
+                  );
+              }}
               onSaveHere={() => {
                 void api.saveVaultAs().then((outcome) => {
                   if (outcome.kind !== "written") {
@@ -389,7 +404,11 @@ export function App(): React.ReactElement {
             ) : null}
 
             {snapshot.vault?.kdbxPath !== undefined ? (
-              <VaultFileCard name={fileNameOf(snapshot.vault)} path={snapshot.vault.kdbxPath} />
+              <VaultFileCard
+                name={fileNameOf(snapshot.vault)}
+                path={snapshot.vault.kdbxPath}
+                onNotice={setNotice}
+              />
             ) : null}
 
             {snapshot.pairedDevices.length === 0 &&
@@ -1004,6 +1023,7 @@ function DeviceRow(props: {
 function VaultFileCard(props: {
   readonly name: string;
   readonly path: string;
+  readonly onNotice: (message: string) => void;
 }): React.ReactElement {
   const [confirming, setConfirming] = useState<"switch" | "stop" | undefined>(
     undefined,
@@ -1028,7 +1048,9 @@ function VaultFileCard(props: {
             tone="primary"
             onClick={() => {
               setConfirming(undefined);
-              void api.chooseVault();
+              void api.chooseVault().catch((error: unknown) => props.onNotice(
+                readableError(error, "That file could not be used.")
+              ));
             }}
           >
             Choose a file…
