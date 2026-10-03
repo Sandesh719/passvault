@@ -7,6 +7,7 @@
  * laptop and a phone, so none of it lives in either app any more — the few
  * things that do differ are in `platform.ts`.
  */
+export * from "./api.js";
 export * from "./platform.js";
 export * from "./snapshot.js";
 export * from "./vaultServices.js";

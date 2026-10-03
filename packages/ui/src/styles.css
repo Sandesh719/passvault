@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+/*
+ * Where the classes actually are.
+ *
+ * Tailwind scans outwards from the application being built, and the interface
+ * no longer lives inside one — it is a package that two apps mount. Without
+ * this the desktop build emitted a quarter of the stylesheet and the window
+ * came up unstyled, which a type check cannot catch.
+ */
+@source "./";
+
 /**
  * The palette, as theme tokens rather than hand-written rules.
  *

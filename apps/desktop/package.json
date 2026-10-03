@@ -25,6 +25,7 @@
     "@passvault/storage-sql": "workspace:*",
     "@passvault/sync": "workspace:*",
     "@passvault/transport": "workspace:*",
+    "@passvault/ui": "workspace:*",
     "chokidar": "^5.0.0",
     "hash-wasm": "^4.12.0",
     "kdbxweb": "^2.1.1",
