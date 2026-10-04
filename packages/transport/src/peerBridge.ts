@@ -149,15 +149,27 @@ export class PeerBridge {
       void this.handleSignal(JSON.parse(String(event.data)) as SignalMessage);
     });
 
-    // `error` is always followed by `close`, so retrying is driven from one
-    // place; handling both reported every outage twice.
-    socket.addEventListener("close", (event) => {
+    /**
+     * One way out, however the socket died.
+     *
+     * `error` is *supposed* to be followed by `close`, and driving the retry
+     * from `close` alone looked tidier. It is not reliable: a refused
+     * connection under Node 22 raises `error` and never closes, so a device
+     * that could not reach the server sat there for ever — the exact failure
+     * reconnecting exists to prevent, reintroduced by trusting the event
+     * order. Both now lead here, and whichever arrives second finds the
+     * socket already cleared and does nothing.
+     */
+    const failed = (detail: string): void => {
       if (this.closingDeliberately || this.socket !== socket) {
         return;
       }
       this.socket = undefined;
-      this.scheduleRetry(server, (event as CloseEvent).reason);
-    });
+      this.scheduleRetry(server, detail);
+    };
+
+    socket.addEventListener("error", () => failed(""));
+    socket.addEventListener("close", (event) => failed((event as CloseEvent).reason));
   }
 
   /**

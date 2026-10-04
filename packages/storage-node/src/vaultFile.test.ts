@@ -155,9 +155,16 @@ describe("VaultFileWatcher", () => {
     watcher.start();
 
     try {
-      for (let index = 0; index < 5; index += 1) {
-        await writeFile(vaultPath, Buffer.from([index]));
-      }
+      // Issued together rather than one after another. Awaiting each write
+      // made the burst only as tight as the machine was fast: on a loaded CI
+      // runner the writes spread out past chokidar's stability window, it
+      // reported twice, and the test failed for being slow rather than for
+      // being wrong.
+      await Promise.all(
+        Array.from({ length: 5 }, (_unused, index) =>
+          writeFile(vaultPath, Buffer.from([index]))
+        )
+      );
       await waitFor(() => calls > 0);
       await new Promise((resolve) => setTimeout(resolve, 600));
       // One settled save, not five revisions in the history.
