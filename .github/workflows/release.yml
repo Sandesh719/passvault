@@ -236,17 +236,12 @@ jobs:
 
           ### Android
 
-          Download `PassVault-*.apk` on the phone and open it. Android will ask
-          you to allow installing from your browser or files app the first
-          time; this is the same warning every app that does not come from the
-          Play Store produces.
+          Download `PassVault-*.apk` on the phone and open it. Android asks
+          once for permission to install from your browser or files app — the
+          ordinary warning for anything that did not come from the Play Store.
 
-          A file named `-UNSIGNED.apk` cannot be installed — it means the
-          release was built without a signing key, and is there for inspection
-          only.
-
-          The phone keeps the vault as a file you choose, so KeePassDX or
-          Keepass2Android can open the very same file PassVault syncs.
+          The phone keeps the vault as a file you pick yourself, so KeePassDX
+          or Keepass2Android opens the very same file PassVault syncs.
 
           ### Verifying the download
 

@@ -39,6 +39,22 @@ let api!: VaultApi;
 let host!: PeerTransportHost;
 let logoUrl = "";
 
+/**
+ * What the Android back gesture should do.
+ *
+ * Only this component knows whether there is anywhere to go back to, so it
+ * answers; the platform decides what "nowhere" means. Without it the gesture
+ * did nothing at all — the web view has no history to pop, because the tabs
+ * are state rather than routes, so Android's own back handler had nothing to
+ * work with and the app simply sat there.
+ */
+let backHandler: (() => boolean) | undefined;
+
+/** True when the press was used. False means the platform should take over. */
+export function pressBack(): boolean {
+  return backHandler?.() ?? false;
+}
+
 export function configureUi(input: {
   readonly api: VaultApi;
   readonly host: PeerTransportHost;
@@ -206,6 +222,19 @@ export function App(): React.ReactElement {
     [runSync],
   );
 
+  useEffect(() => {
+    backHandler = (): boolean => {
+      if (tab !== "home") {
+        setTab("home");
+        return true;
+      }
+      return false;
+    };
+    return () => {
+      backHandler = undefined;
+    };
+  }, [tab]);
+
   const rejoined = useRef(false);
   useEffect(() => {
     if (snapshot === undefined) {
@@ -288,7 +317,7 @@ export function App(): React.ReactElement {
     <div className="grid h-screen grid-rows-[auto_1fr]">
       {/* Padding tracks the main column's so the logo lines up with the cards
           at every width. */}
-      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-rule bg-surface px-4 py-3 sm:px-6 lg:px-8">
+      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-rule bg-surface px-4 pt-[calc(0.75rem_+_var(--inset-top))] pb-3 sm:px-6 lg:px-8">
         <div className="flex items-center gap-2 font-semibold tracking-tight">
           <img src={logoUrl} alt="" aria-hidden="true" className="size-6 shrink-0" />
           <span>PassVault</span>
@@ -341,7 +370,7 @@ export function App(): React.ReactElement {
           rather than absent: cards go on growing, but a paragraph stops at a
           readable measure, which is why the text-heavy ones carry their own
           narrower limit below. */}
-      <main className="mx-auto grid w-full max-w-[1600px] content-start gap-4 overflow-y-auto px-4 pt-5 pb-12 sm:px-6 lg:px-8">
+      <main className="mx-auto grid w-full max-w-[1600px] content-start gap-4 overflow-y-auto px-4 pt-5 pb-[calc(3rem_+_var(--inset-bottom))] sm:px-6 lg:px-8">
         {notice !== undefined ? (
           <div
             role="status"

@@ -30,6 +30,13 @@ export interface PassVaultNative {
   /** Grants can be revoked, and a stale one should say so rather than throw. */
   hasAccess(options: { readonly uri: string }): Promise<{ readonly granted: boolean }>;
 
+  /**
+   * How much room the status bar, navigation bar and camera cutout take, in
+   * CSS pixels. Android's WebView leaves `env(safe-area-inset-*)` at zero, so
+   * this is the only way to find out.
+   */
+  insets(): Promise<SafeAreaInsets>;
+
   /** Is a hardware-or-OS-backed key available to wrap secrets with? */
   canProtect(): Promise<{ readonly available: boolean }>;
   protect(options: { readonly plaintext: string }): Promise<{ readonly ciphertext: string }>;
@@ -45,5 +52,12 @@ export type PickedVault =
       /** What the document provider calls it, which is what a person recognises. */
       readonly name: string;
     };
+
+export interface SafeAreaInsets {
+  readonly top: number;
+  readonly bottom: number;
+  readonly left: number;
+  readonly right: number;
+}
 
 export const Native = registerPlugin<PassVaultNative>("PassVaultNative");

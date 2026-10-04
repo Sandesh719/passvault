@@ -55,6 +55,22 @@
 
 /* The window itself, which has no element in the tree to carry utilities. */
 @layer base {
+  :root {
+    /*
+     * How much of the screen the system is already using.
+     *
+     * From Android 15 an app targeting SDK 35 is drawn behind the status and
+     * navigation bars whether it asks to be or not, so the header ran under
+     * the clock and the punch-hole camera on every recent phone. These expose
+     * the room those bars occupy; the shell adds them to its own padding, so
+     * the header's background still reaches the top of the screen while its
+     * contents stay clear of the cutout.
+     *
+     * Zero everywhere else, which is why the desktop needs no special case.
+     */
+    --inset-top: env(safe-area-inset-top, 0px);
+    --inset-bottom: env(safe-area-inset-bottom, 0px);
+  }
   html {
     color-scheme: dark;
   }

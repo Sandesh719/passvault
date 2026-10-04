@@ -1,11 +1,12 @@
 import { App as CapacitorApp } from "@capacitor/app";
 import { VaultServices, type AppSnapshot } from "@passvault/services";
 import { type PeerFrame, type PeerTransportHost } from "@passvault/transport";
-import { App, configureUi } from "@passvault/ui";
+import { App, configureUi, pressBack } from "@passvault/ui";
 import "@passvault/ui/styles.css";
 import { createRoot } from "react-dom/client";
 import { createMobileApi } from "./api.js";
 import logoUrl from "./icon.png";
+import { Native } from "./platform/native.js";
 import { androidPlatform, flushDatabase } from "./platform/androidPlatform.js";
 
 /**
@@ -82,8 +83,31 @@ const api = createMobileApi({
   }
 });
 
+/**
+ * Keep the interface clear of the system bars.
+ *
+ * The stylesheet reads these as custom properties and falls back to the CSS
+ * `env()` values, which Android never fills in. Asked for again on resume and
+ * on rotation, because a cutout that was at the top is at the side once the
+ * phone turns.
+ */
+async function applyInsets(): Promise<void> {
+  try {
+    const insets = await Native.insets();
+    const root = document.documentElement;
+    root.style.setProperty("--inset-top", `${insets.top}px`);
+    root.style.setProperty("--inset-bottom", `${insets.bottom}px`);
+    root.style.setProperty("--inset-left", `${insets.left}px`);
+    root.style.setProperty("--inset-right", `${insets.right}px`);
+  } catch {
+    // Running outside the native shell; the stylesheet's own fallback stands.
+  }
+}
+
 async function start(): Promise<void> {
   await services.start();
+  await applyInsets();
+  window.addEventListener("resize", () => void applyInsets());
 
   /**
    * Android gives no notification when another app writes the vault, so the
@@ -94,8 +118,27 @@ async function start(): Promise<void> {
    * Going the other way, the database is written out before Android is free to
    * kill the process.
    */
+  /**
+   * The back gesture, which otherwise did nothing.
+   *
+   * Android routes it here rather than to the web view, and the web view has
+   * no history to pop anyway — the tabs are state, not routes. So the
+   * interface gets first refusal, and if it has nowhere to go back to the app
+   * steps aside.
+   *
+   * Minimised rather than exited: that is what "closing" looks like to
+   * someone using the phone, and it leaves the paired connection up, so a
+   * save on the laptop still reaches here without the app being reopened.
+   */
+  void CapacitorApp.addListener("backButton", () => {
+    if (!pressBack()) {
+      void CapacitorApp.minimizeApp();
+    }
+  });
+
   void CapacitorApp.addListener("appStateChange", ({ isActive }) => {
     if (isActive) {
+      void applyInsets();
       void services.recordFileNow();
     } else {
       void flushDatabase();

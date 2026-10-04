@@ -6,5 +6,5 @@
  * JavaScript context. The layout was already responsive down to a phone — that
  * work is what makes this reuse honest rather than a stretched desktop app.
  */
-export { App, configureUi } from "./App.js";
+export { App, configureUi, pressBack } from "./App.js";
 export * from "./ui.js";

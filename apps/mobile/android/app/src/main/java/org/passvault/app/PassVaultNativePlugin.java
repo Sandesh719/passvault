@@ -5,10 +5,14 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.provider.OpenableColumns;
 import android.security.keystore.KeyGenParameterSpec;
+import android.view.View;
 import android.security.keystore.KeyProperties;
 import android.util.Base64;
 
 import androidx.activity.result.ActivityResult;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -143,6 +147,51 @@ public class PassVaultNativePlugin extends Plugin {
         }
         String fallback = uri.getLastPathSegment();
         return fallback == null ? "vault.kdbx" : fallback;
+    }
+
+    // ---- how much room the system bars take ---------------------------------
+
+    /**
+     * The space the status bar, navigation bar and camera cutout occupy.
+     *
+     * CSS has `env(safe-area-inset-*)` for exactly this and the stylesheet
+     * asks for it, but Android's WebView never fills those in — unlike
+     * Safari, where the same code works. Left to it, the values stay at zero
+     * and the header sits under the clock on every phone running Android 15,
+     * which draws apps edge to edge whether they ask to be or not.
+     *
+     * Pulled by the web layer rather than pushed to it. Pushing raced the page
+     * load: insets settle while the WebView still holds a blank document, and
+     * the real page then replaces the element the values were set on.
+     *
+     * Reported in CSS pixels, because that is the unit the answer is used in.
+     */
+    @PluginMethod
+    public void insets(PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            View view = getBridge().getWebView();
+            WindowInsetsCompat window = ViewCompat.getRootWindowInsets(view);
+            float density = getContext().getResources().getDisplayMetrics().density;
+
+            JSObject result = new JSObject();
+            if (window == null) {
+                // Before the view is attached there is nothing to measure, and
+                // zero is the right answer for a phone with no cutout anyway.
+                result.put("top", 0);
+                result.put("bottom", 0);
+                result.put("left", 0);
+                result.put("right", 0);
+            } else {
+                Insets bars = window.getInsets(
+                    WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout()
+                );
+                result.put("top", bars.top / density);
+                result.put("bottom", bars.bottom / density);
+                result.put("left", bars.left / density);
+                result.put("right", bars.right / density);
+            }
+            call.resolve(result);
+        });
     }
 
     // ---- reading and writing it -------------------------------------------
