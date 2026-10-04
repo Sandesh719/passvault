@@ -92,6 +92,71 @@ jobs:
             apps/desktop/release/*.exe
           if-no-files-found: error
 
+  android:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      # Capacitor's own modules compile against 21; the build declares a
+      # toolchain, but the runner still needs a JDK that satisfies it.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm --filter @passvault/mobile check
+      - run: pnpm --filter @passvault/mobile build
+
+      - name: Restore the signing key
+        # Absent on a fork or before the secrets are set. The build then
+        # produces an unsigned APK, which the publish step refuses to ship
+        # rather than handing anyone something that cannot be installed.
+        if: env.KEYSTORE != ''
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: echo "$KEYSTORE" | base64 -d > apps/mobile/android/passvault.jks
+
+      - name: Build the APK
+        working-directory: apps/mobile/android
+        env:
+          PASSVAULT_KEYSTORE: passvault.jks
+          PASSVAULT_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          PASSVAULT_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          PASSVAULT_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          npx cap sync android
+          # Unset the keystore variable entirely when no key was restored, so
+          # the config leaves the build unsigned rather than pointing at a
+          # file that is not there.
+          if [ ! -f passvault.jks ]; then unset PASSVAULT_KEYSTORE; fi
+          ./gradlew assembleRelease
+
+      - name: Name it after the release
+        run: |
+          mkdir -p artifacts
+          built=apps/mobile/android/app/build/outputs/apk/release
+          if [ -f "$built/app-release.apk" ]; then
+            cp "$built/app-release.apk" "artifacts/PassVault-${GITHUB_REF_NAME#v}.apk"
+          else
+            # An unsigned build leaves app-release-unsigned.apk instead. Keep
+            # it for inspection, under a name nobody will mistake for a
+            # download.
+            cp "$built/app-release-unsigned.apk" "artifacts/PassVault-${GITHUB_REF_NAME#v}-UNSIGNED.apk"
+          fi
+          ls -la artifacts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: passvault-android
+          path: artifacts/*.apk
+          if-no-files-found: error
+
   signaling:
     needs: test
     runs-on: ubuntu-latest
@@ -114,7 +179,7 @@ jobs:
     # Only on a tag: a manual run is for checking the build, not for handing
     # anyone an installer.
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [desktop, signaling]
+    needs: [desktop, android, signaling]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -159,6 +224,20 @@ jobs:
 
           Run `PassVault-*-setup.exe`. SmartScreen will say "Windows protected
           your PC" — **More info → Run anyway**.
+
+          ### Android
+
+          Download `PassVault-*.apk` on the phone and open it. Android will ask
+          you to allow installing from your browser or files app the first
+          time; this is the same warning every app that does not come from the
+          Play Store produces.
+
+          A file named `-UNSIGNED.apk` cannot be installed — it means the
+          release was built without a signing key, and is there for inspection
+          only.
+
+          The phone keeps the vault as a file you choose, so KeePassDX or
+          Keepass2Android can open the very same file PassVault syncs.
 
           ### Verifying the download
 

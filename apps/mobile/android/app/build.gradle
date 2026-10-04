@@ -7,8 +7,10 @@ android {
         applicationId "org.passvault.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // Kept in step with the desktop app, so a person can tell at a glance
+        // whether the two devices are running the same release.
+        versionCode 4
+        versionName "0.1.3"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +18,50 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    /**
+     * Signing, when there is a key to sign with.
+     *
+     * An unsigned APK cannot be installed at all, and the debug key Android
+     * ships is shared by every developer in the world — fine for running on
+     * your own emulator, not something to hand another person. So the release
+     * build is signed with a real key when one is configured, through
+     * keystore.properties locally or the environment in CI, and the build
+     * fails loudly rather than quietly producing something unusable when it
+     * is missing.
+     *
+     * The keystore and its passwords are never in the repository. Losing them
+     * means future builds cannot update an installed copy, so whoever holds
+     * them should keep a backup.
+     */
+    signingConfigs {
+        release {
+            def properties = new Properties()
+            def local = rootProject.file("keystore.properties")
+            if (local.exists()) {
+                local.withInputStream { properties.load(it) }
+            }
+            def read = { name, variable ->
+                properties.getProperty(name) ?: System.getenv(variable)
+            }
+            def store = read("storeFile", "PASSVAULT_KEYSTORE")
+            if (store != null) {
+                storeFile = file(store)
+                storePassword = read("storePassword", "PASSVAULT_KEYSTORE_PASSWORD")
+                keyAlias = read("keyAlias", "PASSVAULT_KEY_ALIAS")
+                keyPassword = read("keyPassword", "PASSVAULT_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // Only attach the config when it was actually filled in; otherwise
+            // Gradle rejects the build with a confusing null-path error.
+            if (signingConfigs.release.storeFile != null) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }

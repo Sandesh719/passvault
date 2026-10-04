@@ -59,3 +59,9 @@ DerivedData/
 
 # Two-device sandbox: profiles and sample vaults
 .sandbox/
+
+# Android signing. The keystore is a credential and the passwords beside it
+# are too; both stay on the machine that holds them and in CI secrets.
+*.jks
+*.keystore
+apps/mobile/android/keystore.properties

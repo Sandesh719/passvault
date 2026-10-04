@@ -286,7 +286,66 @@ config change.
 
 ---
 
-## 3. Relay, for networks that block direct connections
+## 3. The Android app
+
+### Building it
+
+```bash
+cd apps/mobile
+pnpm sync            # builds the web bundle and copies it into the project
+npx cap run android  # builds, installs and launches on a device or emulator
+```
+
+The build needs a JDK 21, which it selects through a Gradle toolchain rather
+than inheriting from `JAVA_HOME`. That matters on macOS: Gradle falls back to
+`/usr/libexec/java_home`, which only sees JDKs under
+`/Library/Java/JavaVirtualMachines` and so misses one installed by Homebrew.
+Without the toolchain the build fails with `invalid source release: 21` on a
+machine that has Java 21 on its `PATH`.
+
+### The signing key
+
+An unsigned APK cannot be installed, and the debug key Android ships is shared
+by every developer in the world — fine for your own emulator, not something to
+give another person. Make a real key once:
+
+```bash
+keytool -genkeypair -v -keystore passvault.jks -alias passvault -keyalg RSA -keysize 2048 -validity 10000
+```
+
+**Keep it, and its passwords, safe and backed up.** Android identifies an app
+by its signing key, so losing it means no future build can update a copy
+somebody has already installed — they would have to uninstall and lose their
+pairings first.
+
+To build signed releases locally, put this in
+`apps/mobile/android/keystore.properties`, which is git-ignored:
+
+```properties
+storeFile=/absolute/path/to/passvault.jks
+storePassword=...
+keyAlias=passvault
+keyPassword=...
+```
+
+For CI, add four repository secrets — `ANDROID_KEYSTORE_BASE64`
+(`base64 -i passvault.jks`), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`
+and `ANDROID_KEY_PASSWORD`. Without them the release job still runs and still
+builds, but produces a file named `-UNSIGNED.apk` so that nothing which cannot
+be installed is ever mistaken for a download.
+
+### Sending it to someone
+
+The APK is attached to the GitHub release beside the `.dmg` and `.exe`. They
+download it on the phone and open it; Android asks once for permission to
+install from the browser or files app, which is the ordinary warning for
+anything not from the Play Store.
+
+Getting onto the Play Store itself is a separate undertaking — a developer
+account, a privacy policy, a data-safety declaration and a review — and none
+of it is set up.
+
+## 4. Relay, for networks that block direct connections
 
 Most device pairs connect directly using STUN, which needs no setup. A minority
 cannot — some mobile carriers and corporate firewalls — and those need a TURN
