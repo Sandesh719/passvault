@@ -24,6 +24,26 @@ allprojects {
     }
 }
 
+/**
+ * Compile against Java 21 whichever JDK happens to launch Gradle.
+ *
+ * Capacitor's own modules are built for 21. The JDK running the daemon is
+ * whatever the machine offers — and on macOS that comes from
+ * /usr/libexec/java_home, which does not see a JDK installed by Homebrew. The
+ * result was `invalid source release: 21` on a machine that had Java 21 on its
+ * PATH the whole time. A toolchain states the requirement instead of inheriting
+ * it, so Gradle selects a matching JDK rather than failing.
+ */
+subprojects {
+    plugins.withId("java-base") {
+        java {
+            toolchain {
+                languageVersion = JavaLanguageVersion.of(21)
+            }
+        }
+    }
+}
+
 task clean(type: Delete) {
     delete rootProject.buildDir
 }
