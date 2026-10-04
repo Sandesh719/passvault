@@ -9,8 +9,8 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         // Kept in step with the desktop app, so a person can tell at a glance
         // whether the two devices are running the same release.
-        versionCode 6
-        versionName "0.1.5"
+        versionCode 7
+        versionName "0.1.6"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -45,7 +45,11 @@ android {
             }
             def store = read("storeFile", "PASSVAULT_KEYSTORE")
             if (store != null) {
-                storeFile = file(store)
+                // rootProject, not this module: `file()` here resolves against
+                // android/app, so a relative path — which is what CI passes —
+                // was looked for one directory too deep. Absolute paths are
+                // returned unchanged, so both forms work.
+                storeFile = rootProject.file(store)
                 storePassword = read("storePassword", "PASSVAULT_KEYSTORE_PASSWORD")
                 keyAlias = read("keyAlias", "PASSVAULT_KEY_ALIAS")
                 keyPassword = read("keyPassword", "PASSVAULT_KEY_PASSWORD")
