@@ -73,5 +73,50 @@ nsis:
   deleteAppDataOnUninstall: false
 
 linux:
-  target: [AppImage]
+  # Both, because they fail in different places.
+  #
+  # An AppImage runs on any distribution without being installed, which is the
+  # whole appeal — but from Ubuntu 23.10 AppArmor refuses unprivileged user
+  # namespaces, and Electron's sandbox needs them. Those users get an app that
+  # will not start unless they pass --no-sandbox.
+  #
+  # A .deb is installed properly: dpkg sets chrome-sandbox setuid root, so the
+  # sandbox works without being disabled, the app appears in the applications
+  # menu, and apt can remove it again. That is the one to point Ubuntu users at.
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
   category: Utility
+  # Without this the binary is named after the npm package — `@passvaultdesktop`,
+  # scope punctuation and all — which is what a person would have to type to
+  # launch it, and what the .deb would be called.
+  executableName: passvault
+  synopsis: Keep one KeePass vault in step across your devices
+  description:
+    PassVault synchronises a KeePass .kdbx file between your own devices over a
+    direct peer-to-peer connection. KeePassXC still manages your passwords; this
+    moves the file, and it stays encrypted the whole way.
+
+deb:
+  artifactName: ${productName}-${version}.${ext}
+  # Electron's safeStorage reaches libsecret to protect this device's private
+  # key. Without it the app still runs, but stores the key in the clear and
+  # says so — better to let apt pull it in.
+  depends:
+    - libsecret-1-0
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libdrm2
+    - libgbm1
+    - libxcb-dri3-0
+
+appImage:
+  artifactName: ${productName}-${version}.${ext}
+

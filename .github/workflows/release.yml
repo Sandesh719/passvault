@@ -43,6 +43,8 @@ jobs:
             target: package:mac
           - os: windows-latest
             target: package:win
+          - os: ubuntu-latest
+            target: package:linux
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -60,6 +62,34 @@ jobs:
           # Signing is off until there are certificates to sign with; see
           # DEPLOY.md. These stop electron-builder from looking for them.
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      # The Linux runner has no display, so the app is given a virtual one.
+      # Without this the build would ship an installer nobody had ever run,
+      # which is the gap the Windows check below exists to close.
+      - name: Does the packaged app actually start? (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb
+          profile="$RUNNER_TEMP/passvault-smoke"
+          # Unpacked rather than the AppImage: mounting one needs FUSE, which
+          # a runner does not have, and this is the same binary either package
+          # wraps.
+          app=$(find apps/desktop/release -maxdepth 2 -type f -name passvault | head -1)
+          [ -n "$app" ] && [ -x "$app" ] || { ls -R apps/desktop/release | head -40; exit 1; }
+          echo "launching $app"
+          # --no-sandbox because a CI container cannot give Chromium the user
+          # namespaces it wants. Nothing to do with the AppArmor problem the
+          # .deb exists to avoid on real machines.
+          xvfb-run -a "$app" --no-sandbox --user-data-dir="$profile" &
+          pid=$!
+          sleep 25
+          kill -0 "$pid" 2>/dev/null || { echo "the app exited early"; exit 1; }
+          kill "$pid" || true
+          # Proof it got as far as opening its own store, rather than merely
+          # drawing a window before failing.
+          [ -f "$profile/metadata.db" ] || { echo "the app never created its database"; exit 1; }
+          echo "started, created its database, and stayed up"
 
       - name: Does the packaged app actually start?
         if: matrix.os == 'windows-latest'
@@ -90,6 +120,8 @@ jobs:
           path: |
             apps/desktop/release/*.dmg
             apps/desktop/release/*.exe
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.deb
           if-no-files-found: error
 
   android:
@@ -233,6 +265,23 @@ jobs:
 
           Run `PassVault-*-setup.exe`. SmartScreen will say "Windows protected
           your PC" — **More info → Run anyway**.
+
+          ### Linux
+
+          Two builds, because they fail in different places.
+
+          **`PassVault-*.deb`** is the one to use on Ubuntu or Debian:
+
+          ```
+          sudo apt install ./PassVault-0.0.0.deb
+          ```
+
+          **`PassVault-*.AppImage`** runs on any distribution without being
+          installed — `chmod +x` it and run it. On Ubuntu 23.10 and later it
+          may refuse to start: AppArmor blocks the unprivileged user
+          namespaces Electron's sandbox needs. Use the `.deb`, which installs
+          the sandbox helper properly, or run the AppImage with
+          `--no-sandbox`.
 
           ### Android
 
