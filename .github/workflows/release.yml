@@ -273,7 +273,7 @@ jobs:
           **`PassVault-*.deb`** is the one to use on Ubuntu or Debian:
 
           ```
-          sudo apt install ./PassVault-0.0.0.deb
+          sudo apt install ./PassVault-0.1.0.deb
           ```
 
           **`PassVault-*.AppImage`** runs on any distribution without being

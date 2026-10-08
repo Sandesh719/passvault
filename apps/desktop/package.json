@@ -49,5 +49,6 @@
     "vite": "^6.0.3"
   },
   "description": "Keeps one KeePass vault in step across your devices, peer to peer.",
-  "author": "PassVault"
+  "author": "Sandesh Jaiswal <sandesh.jaiswal101@gmail.com>",
+  "homepage": "https://github.com/Sandesh719/passvault"
 }

@@ -101,6 +101,11 @@ linux:
 
 deb:
   artifactName: ${productName}-${version}.${ext}
+  # A .deb carries a named person responsible for the package; dpkg will not
+  # build one without it. Stated here rather than inferred from package.json's
+  # author field, so that changing how the app is credited cannot break the
+  # build.
+  maintainer: Sandesh Jaiswal <sandesh.jaiswal101@gmail.com>
   # Electron's safeStorage reaches libsecret to protect this device's private
   # key. Without it the app still runs, but stores the key in the clear and
   # says so — better to let apt pull it in.
